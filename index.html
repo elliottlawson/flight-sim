@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 2</title>
+<title>Flight Sim — Phase 3</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -56,6 +56,122 @@
   }
   .stall.active { visibility: visible; animation: blink 0.3s infinite; }
   @keyframes blink { 50% { opacity: 0; } }
+
+  /* Artificial Horizon */
+  #horizon-container {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid #0f0;
+    margin: 12px auto;
+    position: relative;
+    background: #111;
+  }
+  #horizon-ball {
+    width: 100%;
+    height: 300px;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    margin-top: -150px;
+    transform-origin: center 150px;
+  }
+  #horizon-sky {
+    width: 100%;
+    height: 150px;
+    background: linear-gradient(to bottom, #1a3a6a, #3a7abf);
+  }
+  #horizon-ground {
+    width: 100%;
+    height: 150px;
+    background: linear-gradient(to bottom, #7a5c2e, #4a3518);
+  }
+  #horizon-line {
+    position: absolute;
+    top: 150px;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #fff;
+  }
+  .pitch-mark {
+    position: absolute;
+    left: 50%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.6);
+  }
+  .pitch-mark.deg10 { width: 30px; margin-left: -15px; }
+  .pitch-mark.deg20 { width: 50px; margin-left: -25px; }
+  .pitch-mark.up10 { top: 135px; }
+  .pitch-mark.up20 { top: 120px; }
+  .pitch-mark.dn10 { top: 165px; }
+  .pitch-mark.dn20 { top: 180px; }
+  #horizon-wings {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  #horizon-wings::before,
+  #horizon-wings::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    height: 3px;
+    width: 25px;
+    background: #f80;
+  }
+  #horizon-wings::before { right: 8px; }
+  #horizon-wings::after { left: 8px; }
+  #horizon-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    background: #f80;
+    border-radius: 50%;
+    z-index: 2;
+  }
+
+  /* Throttle Bar */
+  #hud-instruments {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin: 8px 0;
+  }
+  #throttle-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  #throttle-track {
+    width: 20px;
+    height: 120px;
+    border: 1px solid #0f0;
+    position: relative;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #throttle-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: linear-gradient(to top, #0a0, #0f0);
+    transition: height 0.05s linear;
+  }
+  #throttle-label {
+    font-size: 10px;
+    color: #0a0;
+    letter-spacing: 1px;
+  }
   #controls {
     position: fixed;
     bottom: 20px;
@@ -81,6 +197,29 @@
   <div class="row"><span class="label">Pitch</span><span class="value" id="pitch">0°</span></div>
   <div class="row"><span class="label">Roll</span><span class="value" id="roll">0°</span></div>
   <div class="row"><span class="label">Heading</span><span class="value" id="hdg">0°</span></div>
+
+  <div id="hud-instruments">
+    <div id="horizon-container">
+      <div id="horizon-ball">
+        <div id="horizon-sky"></div>
+        <div id="horizon-ground"></div>
+        <div id="horizon-line"></div>
+        <div class="pitch-mark deg10 up10"></div>
+        <div class="pitch-mark deg20 up20"></div>
+        <div class="pitch-mark deg10 dn10"></div>
+        <div class="pitch-mark deg20 dn20"></div>
+      </div>
+      <div id="horizon-wings"></div>
+      <div id="horizon-dot"></div>
+    </div>
+    <div id="throttle-bar">
+      <div id="throttle-track">
+        <div id="throttle-fill"></div>
+      </div>
+      <div id="throttle-label">THR</div>
+    </div>
+  </div>
+
   <div class="row"><span class="label">Throttle</span><span class="value" id="thr">0%</span></div>
   <div class="row"><span class="label">AoA</span><span class="value" id="aoa">0°</span></div>
   <div class="stall" id="stall">!! STALL !!</div>
@@ -488,6 +627,13 @@ function updateHUD(model) {
   document.getElementById('hdg').textContent   = headingDeg.toFixed(0) + '°';
   document.getElementById('thr').textContent   = (model.throttle * 100).toFixed(0) + '%';
   document.getElementById('aoa').textContent   = (model.aoa * 180 / Math.PI).toFixed(1) + '°';
+
+  // Artificial horizon — roll negated so banking right tilts horizon left (pilot perspective)
+  document.getElementById('horizon-ball').style.transform =
+    `rotate(${-rollDeg}deg) translateY(${pitchDeg * 1.5}px)`;
+
+  // Throttle bar
+  document.getElementById('throttle-fill').style.height = (model.throttle * 100) + '%';
 
   const stallEl = document.getElementById('stall');
   stallEl.className = model.isStalling ? 'stall active' : 'stall';
