@@ -3,20 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Model — Phase 1</title>
+<title>Flight Sim — Phase 2</title>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #1a1a2e;
+    background: #000;
     color: #0f0;
     font-family: 'Courier New', monospace;
     overflow: hidden;
     height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  }
+  #renderCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    outline: none;
   }
   #hud {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    pointer-events: none;
     background: rgba(0, 0, 0, 0.85);
     border: 1px solid #0f0;
     padding: 24px 32px;
@@ -59,6 +70,8 @@
 </style>
 </head>
 <body>
+
+<canvas id="renderCanvas"></canvas>
 
 <div id="hud">
   <h2>FLIGHT DATA</h2>
@@ -417,8 +430,8 @@ class InputHandler {
     let targetRoll = 0;
     let targetYaw = 0;
 
-    if (this.keys['ArrowUp'])    targetPitch =  1; // pull up
-    if (this.keys['ArrowDown'])  targetPitch = -1; // push down
+    if (this.keys['ArrowUp'])    targetPitch = -1; // push forward = nose down
+    if (this.keys['ArrowDown'])  targetPitch =  1; // pull back = nose up
     if (this.keys['ArrowLeft'])  targetRoll  = -1; // roll left
     if (this.keys['ArrowRight']) targetRoll  =  1; // roll right
     if (this.keys['KeyA'])       targetYaw   = -1; // yaw left
@@ -481,41 +494,265 @@ function updateHUD(model) {
 }
 
 // ============================================================
-// Game Loop — fixed timestep accumulation
+// Babylon.js Scene Setup
+// ============================================================
+function createScene(engine) {
+  const scene = new BABYLON.Scene(engine);
+  scene.useRightHandedSystem = true;
+
+  // Clear color (sky blue)
+  scene.clearColor = new BABYLON.Color4(0.53, 0.72, 0.88, 1);
+
+  // Lights
+  const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
+  hemi.intensity = 0.6;
+
+  const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5, -1, -0.3), scene);
+  sun.intensity = 0.8;
+
+  // Ground — 10km x 10km with grid material
+  const ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 10000, height: 10000 }, scene);
+  const gridMat = new BABYLON.GridMaterial('gridMat', scene);
+  gridMat.majorUnitFrequency = 100;
+  gridMat.minorUnitVisibility = 0.3;
+  gridMat.gridRatio = 10;
+  gridMat.mainColor = new BABYLON.Color3(0.25, 0.4, 0.2);
+  gridMat.lineColor = new BABYLON.Color3(0.35, 0.55, 0.3);
+  gridMat.backFaceCulling = false;
+  ground.material = gridMat;
+
+  // Sky sphere
+  const sky = BABYLON.MeshBuilder.CreateSphere('sky', { diameter: 9000, segments: 16 }, scene);
+  sky.infiniteDistance = true;
+  const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
+  skyMat.backFaceCulling = false;
+  skyMat.disableLighting = true;
+  // Dynamic texture for gradient sky
+  const skyTex = new BABYLON.DynamicTexture('skyTex', { width: 1, height: 256 }, scene);
+  const ctx = skyTex.getContext();
+  const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+  gradient.addColorStop(0.0, '#0a1a3f');   // dark blue top
+  gradient.addColorStop(0.4, '#2266aa');   // mid blue
+  gradient.addColorStop(0.7, '#88bbdd');   // pale blue
+  gradient.addColorStop(1.0, '#c8dde8');   // horizon
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 1, 256);
+  skyTex.update();
+  skyMat.diffuseTexture = skyTex;
+  skyMat.emissiveTexture = skyTex;
+  sky.material = skyMat;
+
+  // Fog — hides ground edges
+  scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
+  scene.fogStart = 3000;
+  scene.fogEnd = 5000;
+  scene.fogColor = new BABYLON.Color3(0.78, 0.87, 0.91); // match horizon
+
+  return scene;
+}
+
+// ============================================================
+// Aircraft Mesh — built from primitives
+// ============================================================
+function createAircraftMesh(scene) {
+  const root = new BABYLON.TransformNode('aircraft', scene);
+
+  // Materials
+  const grayMat = new BABYLON.StandardMaterial('gray', scene);
+  grayMat.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.65);
+
+  const darkGrayMat = new BABYLON.StandardMaterial('darkGray', scene);
+  darkGrayMat.diffuseColor = new BABYLON.Color3(0.35, 0.35, 0.4);
+
+  const lightGrayMat = new BABYLON.StandardMaterial('lightGray', scene);
+  lightGrayMat.diffuseColor = new BABYLON.Color3(0.75, 0.75, 0.78);
+
+  // Fuselage — cylinder along Y, rotate 90° around X so it lies along Z
+  const fuselage = BABYLON.MeshBuilder.CreateCylinder('fuselage', {
+    diameter: 1.2, height: 8, tessellation: 12
+  }, scene);
+  fuselage.rotation.x = Math.PI / 2;
+  fuselage.material = grayMat;
+  fuselage.parent = root;
+
+  // Nose cone — tapered cylinder
+  const nose = BABYLON.MeshBuilder.CreateCylinder('nose', {
+    diameterTop: 0.3, diameterBottom: 1.2, height: 1.5, tessellation: 12
+  }, scene);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.z = -4.75;
+  nose.material = darkGrayMat;
+  nose.parent = root;
+
+  // Wings — box
+  const wings = BABYLON.MeshBuilder.CreateBox('wings', {
+    width: 12, height: 0.15, depth: 1.8
+  }, scene);
+  wings.position.y = -0.1;
+  wings.position.z = -0.5;
+  wings.material = lightGrayMat;
+  wings.parent = root;
+
+  // Horizontal stabilizer
+  const hStab = BABYLON.MeshBuilder.CreateBox('hStab', {
+    width: 4, height: 0.1, depth: 0.8
+  }, scene);
+  hStab.position.y = 0.2;
+  hStab.position.z = 3.8;
+  hStab.material = lightGrayMat;
+  hStab.parent = root;
+
+  // Vertical stabilizer
+  const vStab = BABYLON.MeshBuilder.CreateBox('vStab', {
+    width: 0.1, height: 1.8, depth: 1.2
+  }, scene);
+  vStab.position.y = 1.0;
+  vStab.position.z = 3.5;
+  vStab.material = lightGrayMat;
+  vStab.parent = root;
+
+  root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
+  return root;
+}
+
+// ============================================================
+// Chase Camera
+// ============================================================
+class ChaseCamera {
+  constructor(scene) {
+    this.camera = new BABYLON.FreeCamera('chase', BABYLON.Vector3.Zero(), scene);
+    this.camera.inputs.clear(); // prevent Babylon's default WASD/arrow controls
+    this.camera.minZ = 0.5;
+    this.camera.maxZ = 10000;
+    this.camera.fov = 1.0;
+
+    // Offset in aircraft local space: 5m above, 20m behind (+Z = behind)
+    this.offset = new BABYLON.Vector3(0, 5, 20);
+
+    this.smoothedPosition = null;
+    this.smoothedTarget = null;
+    this.alpha = 0.08;
+    this.baseDt = 1 / 60;
+  }
+
+  update(aircraftMesh, dt) {
+    const meshQ = aircraftMesh.rotationQuaternion;
+    const meshPos = aircraftMesh.position;
+
+    // Rotate offset by aircraft orientation to get desired world position
+    const offsetWorld = new BABYLON.Vector3(0, 0, 0);
+    const rotMatrix = new BABYLON.Matrix();
+    BABYLON.Matrix.FromQuaternionToRef(meshQ, rotMatrix);
+    BABYLON.Vector3.TransformCoordinatesToRef(this.offset, rotMatrix, offsetWorld);
+
+    const desiredPos = meshPos.add(offsetWorld);
+    const desiredTarget = meshPos.clone();
+
+    // Initialize on first frame
+    if (!this.smoothedPosition) {
+      this.smoothedPosition = desiredPos.clone();
+      this.smoothedTarget = desiredTarget.clone();
+    }
+
+    // Frame-rate adjusted lerp alpha
+    const a = 1 - Math.pow(1 - this.alpha, dt / this.baseDt);
+
+    BABYLON.Vector3.LerpToRef(this.smoothedPosition, desiredPos, a, this.smoothedPosition);
+    BABYLON.Vector3.LerpToRef(this.smoothedTarget, desiredTarget, a, this.smoothedTarget);
+
+    // Clamp camera Y >= 2m (never underground)
+    if (this.smoothedPosition.y < 2) this.smoothedPosition.y = 2;
+
+    this.camera.position.copyFrom(this.smoothedPosition);
+    this.camera.setTarget(this.smoothedTarget);
+  }
+}
+
+// ============================================================
+// Game Loop — Babylon engine render loop with fixed timestep physics
 // ============================================================
 const FIXED_DT = 1 / 60;
-const MAX_FRAME_DT = 0.1; // cap to avoid spiral of death
+const MAX_FRAME_DT = 0.1;
 
 const model = new FlightModel();
 const input = new InputHandler();
+
+const canvas = document.getElementById('renderCanvas');
+const engine = new BABYLON.Engine(canvas, true, { stencil: true });
+const scene = createScene(engine);
+const aircraftMesh = createAircraftMesh(scene);
+const chaseCamera = new ChaseCamera(scene);
+scene.activeCamera = chaseCamera.camera;
+
 let lastTime = null;
 let accumulator = 0;
 
-function gameLoop(timestamp) {
-  requestAnimationFrame(gameLoop);
+// Previous state for interpolation (eliminates fixed-timestep stutter)
+let prevPosition = new Vec3(model.position.x, model.position.y, model.position.z);
+let prevOrientation = model.orientation.clone();
 
-  if (lastTime === null) { lastTime = timestamp; return; }
+engine.runRenderLoop(() => {
+  const now = performance.now();
+  if (lastTime === null) { lastTime = now; return; }
 
-  let frameDt = (timestamp - lastTime) / 1000;
-  lastTime = timestamp;
+  let frameDt = (now - lastTime) / 1000;
+  lastTime = now;
 
-  // Cap frame delta to prevent physics explosion after tab switch
   if (frameDt > MAX_FRAME_DT) frameDt = MAX_FRAME_DT;
 
-  // Update input at frame rate (before physics)
+  // 1. Input (unchanged)
   input.update(frameDt, model);
 
-  // Accumulate and step physics at fixed rate
+  // 2. Fixed timestep physics with state snapshots for interpolation
   accumulator += frameDt;
   while (accumulator >= FIXED_DT) {
+    prevPosition.set(model.position.x, model.position.y, model.position.z);
+    prevOrientation = model.orientation.clone();
     model.stepPhysics(FIXED_DT);
     accumulator -= FIXED_DT;
   }
 
-  updateHUD(model);
-}
+  // 3. Interpolate visual mesh between previous and current physics state
+  const alpha = accumulator / FIXED_DT;
+  aircraftMesh.position.set(
+    prevPosition.x + (model.position.x - prevPosition.x) * alpha,
+    prevPosition.y + (model.position.y - prevPosition.y) * alpha,
+    prevPosition.z + (model.position.z - prevPosition.z) * alpha
+  );
+  // Slerp orientation
+  const po = prevOrientation, co = model.orientation;
+  let dot = po.x * co.x + po.y * co.y + po.z * co.z + po.w * co.w;
+  const sign = dot < 0 ? -1 : 1;
+  dot *= sign;
+  // For very small angles, use lerp to avoid division by zero
+  let s0, s1;
+  if (dot > 0.9995) {
+    s0 = 1 - alpha;
+    s1 = alpha * sign;
+  } else {
+    const omega = Math.acos(dot);
+    const sinOmega = Math.sin(omega);
+    s0 = Math.sin((1 - alpha) * omega) / sinOmega;
+    s1 = Math.sin(alpha * omega) / sinOmega * sign;
+  }
+  aircraftMesh.rotationQuaternion.set(
+    s0 * po.x + s1 * co.x,
+    s0 * po.y + s1 * co.y,
+    s0 * po.z + s1 * co.z,
+    s0 * po.w + s1 * co.w
+  );
 
-requestAnimationFrame(gameLoop);
+  // 4. Chase camera
+  chaseCamera.update(aircraftMesh, frameDt);
+
+  // 5. HUD (unchanged)
+  updateHUD(model);
+
+  // 6. Render
+  scene.render();
+});
+
+window.addEventListener('resize', () => engine.resize());
 </script>
 </body>
 </html>
