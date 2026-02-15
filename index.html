@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Model — Phase 1</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #0f0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #hud {
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid #0f0;
+    padding: 24px 32px;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1.8;
+    min-width: 340px;
+  }
+  #hud h2 {
+    text-align: center;
+    margin-bottom: 12px;
+    font-size: 18px;
+    border-bottom: 1px solid #0a0;
+    padding-bottom: 8px;
+  }
+  .row { display: flex; justify-content: space-between; }
+  .label { color: #0a0; }
+  .value { color: #0f0; font-weight: bold; }
+  .stall {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 20px;
+    font-weight: bold;
+    color: #f00;
+    visibility: hidden;
+  }
+  .stall.active { visibility: visible; animation: blink 0.3s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #0a0;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    text-align: center;
+    opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <h2>FLIGHT DATA</h2>
+  <div class="row"><span class="label">Altitude</span><span class="value" id="alt">0 m</span></div>
+  <div class="row"><span class="label">Airspeed</span><span class="value" id="spd">0 m/s</span></div>
+  <div class="row"><span class="label">Vert Speed</span><span class="value" id="vs">0 m/s</span></div>
+  <div class="row"><span class="label">Pitch</span><span class="value" id="pitch">0°</span></div>
+  <div class="row"><span class="label">Roll</span><span class="value" id="roll">0°</span></div>
+  <div class="row"><span class="label">Heading</span><span class="value" id="hdg">0°</span></div>
+  <div class="row"><span class="label">Throttle</span><span class="value" id="thr">0%</span></div>
+  <div class="row"><span class="label">AoA</span><span class="value" id="aoa">0°</span></div>
+  <div class="stall" id="stall">!! STALL !!</div>
+</div>
+
+<div id="controls">
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle
+</div>
+
+<script>
+// ============================================================
+// Vector3 — minimal 3D vector math
+// ============================================================
+class Vec3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+  clone() { return new Vec3(this.x, this.y, this.z); }
+  add(v) { return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z); }
+  sub(v) { return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z); }
+  scale(s) { return new Vec3(this.x * s, this.y * s, this.z * s); }
+  addScaled(v, s) { return new Vec3(this.x + v.x * s, this.y + v.y * s, this.z + v.z * s); }
+  dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+  cross(v) {
+    return new Vec3(
+      this.y * v.z - this.z * v.y,
+      this.z * v.x - this.x * v.z,
+      this.x * v.y - this.y * v.x
+    );
+  }
+  length() { return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z); }
+  lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
+  normalize() {
+    const len = this.length();
+    if (len < 1e-10) return new Vec3(0, 0, 0);
+    return this.scale(1 / len);
+  }
+}
+
+// ============================================================
+// Quaternion — orientation math
+// ============================================================
+class Quat {
+  constructor(x = 0, y = 0, z = 0, w = 1) { this.x = x; this.y = y; this.z = z; this.w = w; }
+  clone() { return new Quat(this.x, this.y, this.z, this.w); }
+
+  multiply(q) {
+    return new Quat(
+      this.w * q.x + this.x * q.w + this.y * q.z - this.z * q.y,
+      this.w * q.y - this.x * q.z + this.y * q.w + this.z * q.x,
+      this.w * q.z + this.x * q.y - this.y * q.x + this.z * q.w,
+      this.w * q.w - this.x * q.x - this.y * q.y - this.z * q.z
+    );
+  }
+
+  normalize() {
+    const len = Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w);
+    if (len < 1e-10) return new Quat(0, 0, 0, 1);
+    return new Quat(this.x / len, this.y / len, this.z / len, this.w / len);
+  }
+
+  // Rotate a vector by this quaternion: q * v * q^-1
+  rotateVec(v) {
+    const qv = new Quat(v.x, v.y, v.z, 0);
+    const qConj = new Quat(-this.x, -this.y, -this.z, this.w);
+    const result = this.multiply(qv).multiply(qConj);
+    return new Vec3(result.x, result.y, result.z);
+  }
+
+  // Create quaternion from axis-angle
+  static fromAxisAngle(axis, angle) {
+    const half = angle * 0.5;
+    const s = Math.sin(half);
+    return new Quat(axis.x * s, axis.y * s, axis.z * s, Math.cos(half));
+  }
+
+  // Extract euler angles (pitch, yaw, roll) for display only
+  toEuler() {
+    const sinr = 2 * (this.w * this.x + this.y * this.z);
+    const cosr = 1 - 2 * (this.x * this.x + this.y * this.y);
+    const roll = Math.atan2(sinr, cosr);
+
+    const sinp = 2 * (this.w * this.y - this.z * this.x);
+    const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+
+    const siny = 2 * (this.w * this.z + this.x * this.y);
+    const cosy = 1 - 2 * (this.y * this.y + this.z * this.z);
+    const yaw = Math.atan2(siny, cosy);
+
+    return { pitch, roll, yaw };
+  }
+}
+
+// ============================================================
+// FlightModel — core physics
+// ============================================================
+class FlightModel {
+  constructor() {
+    // --- Aircraft constants ---
+    this.mass = 1000;             // kg — light aircraft
+    this.maxThrust = 5000;        // N — light prop aircraft (~30% throttle = level at 70 m/s)
+    this.wingArea = 16;           // m² — wing reference area
+    this.airDensity = 1.225;      // kg/m³ — sea level ISA
+
+    // Lift
+    this.clSlope = 5.5;           // CL per radian — typical for small wings (2π ≈ 6.28 theoretical)
+    this.stallAngle = 15 * Math.PI / 180; // ~15° stall angle
+    this.postStallFactor = 0.4;   // CL multiplier after stall (lift drops to 40%)
+
+    // Drag
+    this.cd0 = 0.03;              // parasitic drag coefficient (clean light aircraft)
+    this.cdInducedK = 0.06;       // induced drag factor: CD_induced = K * CL²
+    this.cdStall = 0.15;          // extra drag added during stall
+
+    // Control authority — torque per unit input per unit dynamic pressure
+    this.pitchAuthority = 0.6;    // pitch torque sensitivity (~10°/s at cruise speed)
+    this.rollAuthority = 2.0;     // roll torque sensitivity
+    this.yawAuthority = 0.4;      // yaw torque sensitivity
+
+    // Damping — angular velocity decay rate (1/s), higher = more stable
+    this.pitchDamping = 3.0;
+    this.rollDamping = 3.0;
+    this.yawDamping = 2.5;
+
+    // Stability
+    this.trimAoA = 2 * Math.PI / 180; // 2° — AoA for hands-off level flight
+    this.pitchStability = 0.5;    // restoring torque toward trimAoA (not zero)
+    this.weathervaneStrength = 1.5; // yaw correction from sideslip
+    this.dihedralStrength = 1.5;  // restoring roll from bank angle (dihedral effect)
+    this.sideslipForce = 500;     // lateral force resisting sideslip (N per m/s)
+
+    // --- State ---
+    this.position = new Vec3(0, 100, 0);        // start at 100m altitude
+    this.velocity = new Vec3(0, 0, -70);        // 70 m/s forward (negative Z = forward)
+    // Start with ~2° nose-up pitch so there's lift from frame 1
+    const initPitch = 2 * Math.PI / 180;
+    this.orientation = Quat.fromAxisAngle(new Vec3(1, 0, 0), initPitch);
+    this.angularVelocity = new Vec3(0, 0, 0);   // rad/s in body frame (x=pitch, y=yaw, z=roll)
+
+    // Throttle persists between frames (set by W/S)
+    this.throttle = 0.5;
+
+    // Derived (updated each step)
+    this.airspeed = 70;
+    this.altitude = 100;
+    this.verticalSpeed = 0;
+    this.aoa = 0;
+    this.isStalling = false;
+
+    // Inputs (set externally each frame)
+    this.pitchInput = 0;   // -1 to 1
+    this.rollInput = 0;    // -1 to 1
+    this.yawInput = 0;     // -1 to 1
+  }
+
+  // Get aircraft's local axes in world space
+  getForward() { return this.orientation.rotateVec(new Vec3(0, 0, -1)); }
+  getUp()      { return this.orientation.rotateVec(new Vec3(0, 1, 0)); }
+  getRight()   { return this.orientation.rotateVec(new Vec3(1, 0, 0)); }
+
+  stepPhysics(dt) {
+    const forward = this.getForward();
+    const up = this.getUp();
+    const right = this.getRight();
+
+    // --- Airspeed & dynamic pressure ---
+    this.airspeed = this.velocity.length();
+    const dynamicPressure = 0.5 * this.airDensity * this.airspeed * this.airspeed; // q = ½ρv²
+    const qS = dynamicPressure * this.wingArea; // q * S — used for force coefficients
+
+    // --- Angle of Attack ---
+    // AoA = angle between velocity and aircraft forward axis
+    // Using atan2(-upDot, forwardDot) — forwardDot must NOT be negated
+    if (this.airspeed > 0.5) {
+      const velNorm = this.velocity.normalize();
+      const forwardDot = velNorm.dot(forward);
+      const upDot = velNorm.dot(up);
+      this.aoa = Math.atan2(-upDot, forwardDot);
+    } else {
+      this.aoa = 0;
+    }
+
+    // --- Unified CL (used for both lift and induced drag) ---
+    let cl;
+    const absAoa = Math.abs(this.aoa);
+    if (absAoa < this.stallAngle) {
+      cl = this.clSlope * this.aoa; // linear region
+      this.isStalling = false;
+    } else {
+      // Post-stall: CL drops
+      cl = this.clSlope * Math.sign(this.aoa) * this.stallAngle * this.postStallFactor;
+      this.isStalling = true;
+    }
+
+    // --- Forces ---
+    let totalForce = new Vec3(0, 0, 0);
+
+    // 1. Gravity (world down)
+    totalForce = totalForce.add(new Vec3(0, -9.81 * this.mass, 0));
+
+    // 2. Thrust (along aircraft forward)
+    const thrustMag = this.throttle * this.maxThrust;
+    totalForce = totalForce.add(forward.scale(thrustMag));
+
+    // 3. Lift (perpendicular to velocity, in the plane of forward+up)
+    if (this.airspeed > 1) {
+      const liftMag = cl * qS;
+      // Lift direction: perpendicular to velocity in the forward-up plane
+      // liftDir = normalize(up - (up·velDir)*velDir) approximately, but more robust:
+      // Use cross products: liftDir = normalize(velocity × right) — gives "aerodynamic up"
+      const velDir = this.velocity.normalize();
+      let liftDir = velDir.cross(right).normalize();
+      // Make sure lift points generally upward relative to aircraft
+      if (liftDir.dot(up) < 0) liftDir = liftDir.scale(-1);
+      totalForce = totalForce.add(liftDir.scale(liftMag));
+    }
+
+    // 4. Drag (opposes velocity)
+    if (this.airspeed > 0.5) {
+      const cdInduced = this.cdInducedK * cl * cl;
+      let cd = this.cd0 + cdInduced;
+      if (this.isStalling) cd += this.cdStall;
+      const dragMag = cd * qS;
+      const dragDir = this.velocity.normalize().scale(-1);
+      totalForce = totalForce.add(dragDir.scale(dragMag));
+    }
+
+    // 5. Sideslip force — resists lateral airflow across fuselage
+    if (this.airspeed > 1) {
+      const velDir = this.velocity.normalize();
+      const sideslip = velDir.dot(right); // how much velocity is sideways
+      const sideslipForce = right.scale(-sideslip * this.sideslipForce * this.airspeed);
+      totalForce = totalForce.add(sideslipForce);
+    }
+
+    // --- Acceleration ---
+    const accel = totalForce.scale(1 / this.mass);
+    this.velocity = this.velocity.add(accel.scale(dt));
+
+    // --- Torques (in body-local frame) ---
+    // Control authority scales with dynamic pressure (more authority at higher speed)
+    const authorityScale = Math.min(dynamicPressure / 3000, 1.5); // normalized, capped
+
+    // Control torques
+    // Body-frame right-hand rule: +wx=nose up, +wy=nose left, +wz=left bank
+    // Negate roll and yaw so ArrowRight=right bank and KeyD=yaw right
+    const pitchTorque = this.pitchInput * this.pitchAuthority * authorityScale;
+    const rollTorque = -this.rollInput * this.rollAuthority * authorityScale;
+    let yawTorque = -this.yawInput * this.yawAuthority * authorityScale;
+
+    // Pitch stability — restores toward trimAoA (not zero, so lift is maintained)
+    const pitchStab = -(this.aoa - this.trimAoA) * this.pitchStability * authorityScale;
+
+    // Weathervane — yaw correction from sideslip (vertical stabilizer effect)
+    if (this.airspeed > 1) {
+      const velDir = this.velocity.normalize();
+      const sideslip = Math.asin(Math.max(-1, Math.min(1, velDir.dot(right))));
+      yawTorque += -sideslip * this.weathervaneStrength * authorityScale;
+    }
+
+    // Dihedral effect — gravity projection onto right axis creates restoring roll
+    const worldUp = new Vec3(0, 1, 0);
+    const bankDot = right.dot(worldUp); // negative when right wing down
+    const dihedralTorque = -bankDot * this.dihedralStrength * authorityScale;
+
+    // Apply torques to angular velocity
+    this.angularVelocity.x += (pitchTorque + pitchStab) * dt;
+    this.angularVelocity.y += yawTorque * dt;
+    this.angularVelocity.z += (rollTorque + dihedralTorque) * dt;
+
+    // Angular damping — decays angular velocity when no input
+    this.angularVelocity.x *= Math.exp(-this.pitchDamping * dt);
+    this.angularVelocity.y *= Math.exp(-this.yawDamping * dt);
+    this.angularVelocity.z *= Math.exp(-this.rollDamping * dt);
+
+    // Clamp angular velocity (prevent wild spinning)
+    const maxAngVel = 3.0; // rad/s
+    this.angularVelocity.x = Math.max(-maxAngVel, Math.min(maxAngVel, this.angularVelocity.x));
+    this.angularVelocity.y = Math.max(-maxAngVel, Math.min(maxAngVel, this.angularVelocity.y));
+    this.angularVelocity.z = Math.max(-maxAngVel, Math.min(maxAngVel, this.angularVelocity.z));
+
+    // --- Apply rotation (quaternion derivative from body-frame angular velocity) ---
+    // q_dot = 0.5 * q * omega_body, where omega_body is a pure quaternion
+    // Body axes: +X=right, +Y=up, +Z=backward
+    // Right-hand: +wx=nose up, +wy=nose left, +wz=left bank
+    const omega = new Quat(
+      this.angularVelocity.x,
+      this.angularVelocity.y,
+      this.angularVelocity.z,
+      0
+    );
+    const qDot = this.orientation.multiply(omega);
+    this.orientation = new Quat(
+      this.orientation.x + qDot.x * 0.5 * dt,
+      this.orientation.y + qDot.y * 0.5 * dt,
+      this.orientation.z + qDot.z * 0.5 * dt,
+      this.orientation.w + qDot.w * 0.5 * dt
+    ).normalize();
+
+    // --- Update position ---
+    this.position = this.position.add(this.velocity.scale(dt));
+
+    // --- Ground clamp ---
+    if (this.position.y < 0) {
+      this.position.y = 0;
+      if (this.velocity.y < 0) this.velocity.y = 0;
+      // Kill angular velocity on ground contact
+      this.angularVelocity.set(0, 0, 0);
+    }
+
+    // --- Velocity clamp (prevent runaway) ---
+    const maxSpeed = 300; // m/s
+    if (this.airspeed > maxSpeed) {
+      this.velocity = this.velocity.normalize().scale(maxSpeed);
+    }
+
+    // --- Update derived values ---
+    this.altitude = this.position.y;
+    this.verticalSpeed = this.velocity.y;
+  }
+}
+
+// ============================================================
+// Input Handler — keyboard with smoothing
+// ============================================================
+class InputHandler {
+  constructor() {
+    this.keys = {};
+    this.smoothPitch = 0;
+    this.smoothRoll = 0;
+    this.smoothYaw = 0;
+    this.rampRate = 5.0; // ramp toward target at 5/s
+
+    window.addEventListener('keydown', (e) => {
+      this.keys[e.code] = true;
+      e.preventDefault();
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys[e.code] = false;
+      e.preventDefault();
+    });
+  }
+
+  update(dt, model) {
+    // Raw target inputs
+    let targetPitch = 0;
+    let targetRoll = 0;
+    let targetYaw = 0;
+
+    if (this.keys['ArrowUp'])    targetPitch =  1; // pull up
+    if (this.keys['ArrowDown'])  targetPitch = -1; // push down
+    if (this.keys['ArrowLeft'])  targetRoll  = -1; // roll left
+    if (this.keys['ArrowRight']) targetRoll  =  1; // roll right
+    if (this.keys['KeyA'])       targetYaw   = -1; // yaw left
+    if (this.keys['KeyD'])       targetYaw   =  1; // yaw right
+
+    // Throttle — adjust and clamp (persists)
+    const throttleRate = 0.5; // 0 to 1 in 2 seconds
+    if (this.keys['KeyW']) model.throttle = Math.min(1, model.throttle + throttleRate * dt);
+    if (this.keys['KeyS']) model.throttle = Math.max(0, model.throttle - throttleRate * dt);
+
+    // Smooth ramp toward targets
+    this.smoothPitch = this._ramp(this.smoothPitch, targetPitch, dt);
+    this.smoothRoll  = this._ramp(this.smoothRoll, targetRoll, dt);
+    this.smoothYaw   = this._ramp(this.smoothYaw, targetYaw, dt);
+
+    model.pitchInput = this.smoothPitch;
+    model.rollInput  = this.smoothRoll;
+    model.yawInput   = this.smoothYaw;
+  }
+
+  _ramp(current, target, dt) {
+    const diff = target - current;
+    const step = this.rampRate * dt;
+    if (Math.abs(diff) < step) return target;
+    return current + Math.sign(diff) * step;
+  }
+}
+
+// ============================================================
+// HUD — update display elements
+// ============================================================
+function updateHUD(model) {
+  // Extract angles directly from orientation axes (avoids Euler convention mismatch)
+  const forward = model.getForward();
+  const up = model.getUp();
+  const right = model.getRight();
+  const worldUp = new Vec3(0, 1, 0);
+
+  // Pitch: how far nose is above/below horizon
+  const pitchDeg = Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI;
+
+  // Roll: bank angle (positive = right wing down / right bank)
+  const rollDeg = Math.atan2(-right.dot(worldUp), up.dot(worldUp)) * 180 / Math.PI;
+
+  // Heading: compass bearing (0=north/-Z, 90=east/+X)
+  let headingDeg = Math.atan2(forward.x, -forward.z) * 180 / Math.PI;
+  if (headingDeg < 0) headingDeg += 360;
+
+  document.getElementById('alt').textContent   = model.altitude.toFixed(1) + ' m';
+  document.getElementById('spd').textContent   = model.airspeed.toFixed(1) + ' m/s';
+  document.getElementById('vs').textContent    = model.verticalSpeed.toFixed(1) + ' m/s';
+  document.getElementById('pitch').textContent = pitchDeg.toFixed(1) + '°';
+  document.getElementById('roll').textContent  = rollDeg.toFixed(1) + '°';
+  document.getElementById('hdg').textContent   = headingDeg.toFixed(0) + '°';
+  document.getElementById('thr').textContent   = (model.throttle * 100).toFixed(0) + '%';
+  document.getElementById('aoa').textContent   = (model.aoa * 180 / Math.PI).toFixed(1) + '°';
+
+  const stallEl = document.getElementById('stall');
+  stallEl.className = model.isStalling ? 'stall active' : 'stall';
+}
+
+// ============================================================
+// Game Loop — fixed timestep accumulation
+// ============================================================
+const FIXED_DT = 1 / 60;
+const MAX_FRAME_DT = 0.1; // cap to avoid spiral of death
+
+const model = new FlightModel();
+const input = new InputHandler();
+let lastTime = null;
+let accumulator = 0;
+
+function gameLoop(timestamp) {
+  requestAnimationFrame(gameLoop);
+
+  if (lastTime === null) { lastTime = timestamp; return; }
+
+  let frameDt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+
+  // Cap frame delta to prevent physics explosion after tab switch
+  if (frameDt > MAX_FRAME_DT) frameDt = MAX_FRAME_DT;
+
+  // Update input at frame rate (before physics)
+  input.update(frameDt, model);
+
+  // Accumulate and step physics at fixed rate
+  accumulator += frameDt;
+  while (accumulator >= FIXED_DT) {
+    model.stepPhysics(FIXED_DT);
+    accumulator -= FIXED_DT;
+  }
+
+  updateHUD(model);
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
