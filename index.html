@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 11</title>
+<title>Flight Sim — Phase 12</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -2616,6 +2616,233 @@ function createScene(engine) {
   shadowGen.stabilizeCascades = true;
   terrainManager.shadowGen = shadowGen;
   terrainManager.update(0, 0); // initial load around origin
+
+  // ============= AIRPORT ENVIRONMENT — Phase 12 =============
+
+  // --- Shared Materials ---
+  const taxiwayPaveMat = new BABYLON.PBRMetallicRoughnessMaterial('taxiwayPaveMat', scene);
+  taxiwayPaveMat.baseColor = BABYLON.Color3.FromHexString('#303030');
+  taxiwayPaveMat.metallic = 0.0;
+  taxiwayPaveMat.roughness = 0.85;
+
+  const hangarMat = new BABYLON.PBRMetallicRoughnessMaterial('hangarMat', scene);
+  hangarMat.baseColor = BABYLON.Color3.FromHexString('#707070');
+  hangarMat.metallic = 0.6;
+  hangarMat.roughness = 0.5;
+
+  const concreteMat = new BABYLON.PBRMetallicRoughnessMaterial('concreteMat', scene);
+  concreteMat.baseColor = BABYLON.Color3.FromHexString('#D0D0D0');
+  concreteMat.metallic = 0.0;
+  concreteMat.roughness = 0.9;
+
+  const darkOpeningMat = new BABYLON.PBRMetallicRoughnessMaterial('darkOpeningMat', scene);
+  darkOpeningMat.baseColor = BABYLON.Color3.FromHexString('#101010');
+  darkOpeningMat.metallic = 0.0;
+  darkOpeningMat.roughness = 1.0;
+
+  const towerGlassMat = new BABYLON.PBRMetallicRoughnessMaterial('towerGlassMat', scene);
+  towerGlassMat.baseColor = BABYLON.Color3.FromHexString('#88AACC');
+  towerGlassMat.metallic = 0.1;
+  towerGlassMat.roughness = 0.1;
+  towerGlassMat.alpha = 0.4;
+
+  // --- Taxiway with yellow centerline ---
+  const taxiwayTex = new BABYLON.DynamicTexture('taxiwayTex', { width: 32, height: 2048 }, scene);
+  const tctx = taxiwayTex.getContext();
+  tctx.fillStyle = '#303030';
+  tctx.fillRect(0, 0, 32, 2048);
+  tctx.fillStyle = '#cccc00';
+  const twDash = Math.round(30 / 2000 * 2048);
+  const twGap = Math.round(20 / 2000 * 2048);
+  for (let ty = 0; ty < 2048; ty += twDash + twGap) {
+    tctx.fillRect(15, ty, 2, twDash);
+  }
+  taxiwayTex.update();
+  const taxiwayTexMat = new BABYLON.StandardMaterial('taxiwayTexMat', scene);
+  taxiwayTexMat.diffuseTexture = taxiwayTex;
+  taxiwayTexMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+
+  // Main parallel taxiway: 15m wide, 2000m long, offset 75m east
+  const taxiway = BABYLON.MeshBuilder.CreateGround('taxiway', { width: 15, height: 2000 }, scene);
+  taxiway.position.set(75, 0.04, -1000);
+  taxiway.material = taxiwayTexMat;
+  taxiway.renderingGroupId = 1;
+
+  // Connector taxiways at each end (perpendicular strips)
+  const northConn = BABYLON.MeshBuilder.CreateGround('northConn', { width: 75, height: 15 }, scene);
+  northConn.position.set(37.5, 0.04, 0);
+  northConn.material = taxiwayPaveMat;
+  northConn.renderingGroupId = 1;
+
+  const southConn = BABYLON.MeshBuilder.CreateGround('southConn', { width: 75, height: 15 }, scene);
+  southConn.position.set(37.5, 0.04, -2000);
+  southConn.material = taxiwayPaveMat;
+  southConn.renderingGroupId = 1;
+
+  // --- Apron / Parking Area ---
+  const apron = BABYLON.MeshBuilder.CreateGround('apron', { width: 45, height: 80 }, scene);
+  apron.position.set(105, 0.04, -1000);
+  apron.material = taxiwayPaveMat;
+  apron.renderingGroupId = 1;
+
+  // --- Runway Edge Lights (white emissive, every 60m) ---
+  const edgeLightMat = new BABYLON.StandardMaterial('edgeLightMat', scene);
+  edgeLightMat.disableLighting = true;
+  edgeLightMat.emissiveColor = new BABYLON.Color3(1, 1, 0.9);
+  const edgeLightSphere = BABYLON.MeshBuilder.CreateSphere('edgeLightSrc', { diameter: 0.6, segments: 6 }, scene);
+  edgeLightSphere.material = edgeLightMat;
+  edgeLightSphere.renderingGroupId = 1;
+  for (let z = 0; z >= -2000; z -= 60) {
+    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-22.5, 0.5, z));
+    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(22.5, 0.5, z));
+  }
+
+  // --- Threshold Lights ---
+  // Green at approach end (z=0)
+  const greenLightMat = new BABYLON.StandardMaterial('greenLightMat', scene);
+  greenLightMat.disableLighting = true;
+  greenLightMat.emissiveColor = new BABYLON.Color3(0, 1, 0);
+  const greenLightSphere = BABYLON.MeshBuilder.CreateSphere('greenLightSrc', { diameter: 0.5, segments: 6 }, scene);
+  greenLightSphere.material = greenLightMat;
+  greenLightSphere.renderingGroupId = 1;
+  for (let i = 0; i < 10; i++) {
+    greenLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, 0.4, 1));
+  }
+
+  // Red at departure end (z=-2000)
+  const redLightMat = new BABYLON.StandardMaterial('redLightMat', scene);
+  redLightMat.disableLighting = true;
+  redLightMat.emissiveColor = new BABYLON.Color3(1, 0, 0);
+  const redLightSphere = BABYLON.MeshBuilder.CreateSphere('redLightSrc', { diameter: 0.5, segments: 6 }, scene);
+  redLightSphere.material = redLightMat;
+  redLightSphere.renderingGroupId = 1;
+  for (let i = 0; i < 10; i++) {
+    redLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, 0.4, -2001));
+  }
+
+  // --- Taxiway Edge Lights (blue) ---
+  const blueLightMat = new BABYLON.StandardMaterial('blueLightMat', scene);
+  blueLightMat.disableLighting = true;
+  blueLightMat.emissiveColor = new BABYLON.Color3(0, 0.3, 1);
+  const blueLightSphere = BABYLON.MeshBuilder.CreateSphere('blueLightSrc', { diameter: 0.4, segments: 6 }, scene);
+  blueLightSphere.material = blueLightMat;
+  blueLightSphere.renderingGroupId = 1;
+  for (let z = 0; z >= -2000; z -= 60) {
+    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(67.5, 0.3, z));
+    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(82.5, 0.3, z));
+  }
+
+  // --- Control Tower ---
+  const towerX = 150, towerZ = -1000;
+  const towerBase = BABYLON.MeshBuilder.CreateBox('towerBase', { width: 10, height: 20, depth: 10 }, scene);
+  towerBase.position.set(towerX, 10, towerZ);
+  towerBase.material = concreteMat;
+  towerBase.renderingGroupId = 1;
+  towerBase.receiveShadows = true;
+  shadowGen.addShadowCaster(towerBase);
+
+  const towerCab = BABYLON.MeshBuilder.CreateBox('towerCab', { width: 12, height: 4, depth: 12 }, scene);
+  towerCab.position.set(towerX, 22, towerZ);
+  towerCab.material = concreteMat;
+  towerCab.renderingGroupId = 1;
+  towerCab.receiveShadows = true;
+  shadowGen.addShadowCaster(towerCab);
+
+  // Tower cab windows (glass bands on all 4 sides)
+  [
+    { w: 11, h: 2.5, d: 0.3, x: towerX, z: towerZ - 6.15 },
+    { w: 11, h: 2.5, d: 0.3, x: towerX, z: towerZ + 6.15 },
+    { w: 0.3, h: 2.5, d: 11, x: towerX - 6.15, z: towerZ },
+    { w: 0.3, h: 2.5, d: 11, x: towerX + 6.15, z: towerZ },
+  ].forEach((win, i) => {
+    const m = BABYLON.MeshBuilder.CreateBox('towerWin' + i, { width: win.w, height: win.h, depth: win.d }, scene);
+    m.position.set(win.x, 22, win.z);
+    m.material = towerGlassMat;
+    m.renderingGroupId = 1;
+  });
+
+  // --- Hangars (3, between runway and taxiway) ---
+  const hangarConfigs = [
+    { x: 45, z: -600, w: 30, h: 15, d: 40, hasDoor: true },
+    { x: 45, z: -800, w: 25, h: 13, d: 35, hasDoor: false },
+    { x: 45, z: -1050, w: 30, h: 15, d: 40, hasDoor: true },
+  ];
+  hangarConfigs.forEach((cfg, i) => {
+    const hg = BABYLON.MeshBuilder.CreateBox('hangar' + i, { width: cfg.w, height: cfg.h, depth: cfg.d }, scene);
+    hg.position.set(cfg.x, cfg.h / 2, cfg.z);
+    hg.material = hangarMat;
+    hg.renderingGroupId = 1;
+    hg.receiveShadows = true;
+    shadowGen.addShadowCaster(hg);
+    if (cfg.hasDoor) {
+      const door = BABYLON.MeshBuilder.CreateBox('hangarDoor' + i, {
+        width: 0.3, height: cfg.h * 0.75, depth: cfg.d * 0.6
+      }, scene);
+      door.position.set(cfg.x - cfg.w / 2 - 0.15, cfg.h * 0.375, cfg.z);
+      door.material = darkOpeningMat;
+      door.renderingGroupId = 1;
+    }
+  });
+
+  // --- Terminal Building ---
+  const termX = 135, termZ = -1000;
+  const terminal = BABYLON.MeshBuilder.CreateBox('terminal', { width: 20, height: 8, depth: 60 }, scene);
+  terminal.position.set(termX, 4, termZ);
+  terminal.material = concreteMat;
+  terminal.renderingGroupId = 1;
+  terminal.receiveShadows = true;
+  shadowGen.addShadowCaster(terminal);
+
+  // Window sections on west face (facing apron)
+  for (let wi = 0; wi < 5; wi++) {
+    const wz = termZ - 24 + wi * 12;
+    const twin = BABYLON.MeshBuilder.CreateBox('termWin' + wi, { width: 0.3, height: 4, depth: 8 }, scene);
+    twin.position.set(termX - 10.15, 4, wz);
+    twin.material = towerGlassMat;
+    twin.renderingGroupId = 1;
+  }
+
+  // Covered overhang on west side
+  const overhang = BABYLON.MeshBuilder.CreateBox('overhang', { width: 5, height: 0.3, depth: 50 }, scene);
+  overhang.position.set(termX - 12.5, 7.85, termZ);
+  overhang.material = concreteMat;
+  overhang.renderingGroupId = 1;
+
+  // Overhang support pillars
+  for (let pi = 0; pi < 6; pi++) {
+    const pz = termZ - 20 + pi * 8;
+    const pillar = BABYLON.MeshBuilder.CreateCylinder('pillar' + pi, {
+      diameter: 0.3, height: 7.85, tessellation: 8
+    }, scene);
+    pillar.position.set(termX - 14.5, 3.925, pz);
+    pillar.material = concreteMat;
+    pillar.renderingGroupId = 1;
+  }
+
+  // --- Windsock ---
+  const wsX = -35, wsZ = -500;
+  const wsPoleMat = new BABYLON.PBRMetallicRoughnessMaterial('wsPoleMat', scene);
+  wsPoleMat.baseColor = BABYLON.Color3.FromHexString('#808080');
+  wsPoleMat.metallic = 0.5;
+  wsPoleMat.roughness = 0.6;
+  const wsPole = BABYLON.MeshBuilder.CreateCylinder('wsPole', {
+    diameter: 0.15, height: 6, tessellation: 8
+  }, scene);
+  wsPole.position.set(wsX, 3, wsZ);
+  wsPole.material = wsPoleMat;
+  wsPole.renderingGroupId = 1;
+
+  const wsSockMat = new BABYLON.StandardMaterial('wsSockMat', scene);
+  wsSockMat.diffuseColor = new BABYLON.Color3(1, 0.5, 0);
+  wsSockMat.emissiveColor = new BABYLON.Color3(0.3, 0.15, 0);
+  wsSockMat.backFaceCulling = false;
+  const windsock = BABYLON.MeshBuilder.CreateCylinder('windsock', {
+    diameterTop: 0, diameterBottom: 0.8, height: 1.5, tessellation: 8
+  }, scene);
+  windsock.rotation.x = Math.PI / 2;
+  windsock.position.set(wsX, 5.8, wsZ - 0.75);
+  windsock.material = wsSockMat;
+  windsock.renderingGroupId = 1;
 
   // Cloud layer
   const cloudPlane = BABYLON.MeshBuilder.CreateGround('clouds', { width: 20000, height: 20000, subdivisions: 1 }, scene);
