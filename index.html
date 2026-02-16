@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 9</title>
+<title>Flight Sim — Phase 11</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -689,6 +689,106 @@
     letter-spacing: 1px;
   }
 
+  /* Flaps Indicator */
+  #hud-flaps {
+    position: absolute;
+    bottom: 104px;
+    right: 40px;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #666666;
+  }
+
+  /* Speed Brake Indicator */
+  #hud-speedbrake {
+    position: absolute;
+    bottom: 128px;
+    right: 40px;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #ffaa00;
+    display: none;
+  }
+
+  /* Wheel Brake Indicator */
+  #hud-wheelbrake {
+    position: absolute;
+    bottom: 152px;
+    right: 40px;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #ffaa00;
+    display: none;
+  }
+
+  /* ILS Glideslope */
+  #ils-glideslope {
+    position: absolute;
+    right: 115px;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    background: #ff00ff;
+    transform: translate(50%, -50%) rotate(45deg);
+    z-index: 5;
+    display: none;
+  }
+  #ils-gs-scale {
+    position: absolute;
+    right: 110px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 120px;
+    display: none;
+    z-index: 4;
+  }
+  .ils-dot {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #00ff00;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  /* ILS Localizer */
+  #ils-localizer {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    background: #ff00ff;
+    transform: translate(-50%, 0) rotate(45deg);
+    z-index: 5;
+    display: none;
+  }
+  #ils-loc-scale {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 200px;
+    height: 20px;
+    display: none;
+    z-index: 4;
+  }
+
+  /* Approach Speed Brackets */
+  .approach-bracket {
+    position: absolute;
+    right: 0;
+    width: 6px;
+    height: 3px;
+    background: #00ff00;
+    display: none;
+  }
+
   #controls {
     position: fixed;
     bottom: 20px;
@@ -768,6 +868,23 @@
   <!-- Auto-Level Indicator -->
   <div id="hud-autolevel">AUTOLVL</div>
 
+  <!-- Flaps Indicator -->
+  <div id="hud-flaps">FLAPS 0</div>
+
+  <!-- Speed Brake Indicator -->
+  <div id="hud-speedbrake">SPD BRK</div>
+
+  <!-- Wheel Brake Indicator -->
+  <div id="hud-wheelbrake">BRK</div>
+
+  <!-- ILS Glideslope -->
+  <div id="ils-gs-scale"></div>
+  <div id="ils-glideslope"></div>
+
+  <!-- ILS Localizer -->
+  <div id="ils-loc-scale"></div>
+  <div id="ils-localizer"></div>
+
   <!-- Boundary Warning -->
   <div id="boundary-warning">LEAVING AREA</div>
 
@@ -817,7 +934,7 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; F Flaps &nbsp;|&nbsp; B Brake &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
 </div>
 
 <div id="crash-overlay">
@@ -975,15 +1092,20 @@ const TERRAIN_SIZE = 10000;
 const TERRAIN_MAX_HEIGHT = 600;
 
 function getTerrainHeight(x, z) {
-  // Flat zone for runway: |x| < 40 AND z in [-850, 50]
-  if (Math.abs(x) < 40 && z > -850 && z < 50) return 0;
+  // Flat airfield zone around the full runway (z=0 to z=-2000, centered at z=-1000)
+  // Use distance to nearest point on runway centerline for a rounded-rectangle shape
+  const rwyMinZ = -2200, rwyMaxZ = 200;
+  const clampedZ = Math.max(rwyMinZ, Math.min(rwyMaxZ, z));
+  const dx = Math.abs(x);
+  const dz = Math.abs(z - clampedZ);
+  const distToRunway = Math.sqrt(dx * dx + dz * dz);
 
-  // Wide flat airfield zone (600m) with gentle transition out to 1500m
-  const dist = Math.sqrt(x * x + z * z);
-  if (dist < 600) return 0;
+  // Inner flat zone: 300m from runway centerline — slightly below runway to avoid z-fighting
+  if (distToRunway < 300) return -0.05;
+  // Transition zone: 300m to 2000m — smoothstep from flat to full terrain
   let flattenFactor = 1.0;
-  if (dist < 1500) {
-    const t = (dist - 600) / 900;
+  if (distToRunway < 2000) {
+    const t = (distToRunway - 300) / 1700;
     flattenFactor = t * t * (3 - 2 * t); // smoothstep
   }
 
@@ -1099,6 +1221,13 @@ const aircraftProfiles = {
     pitchStability: 0.5, dihedralStrength: 1.5, weathervaneStrength: 1.5,
     trimAoA: 2, autoLevel: true, autoLevelStrength: 1.0,
     gearDragPenalty: 0.3,
+    flapSettings: [0, 10, 20, 30],
+    flapLiftMultiplier: 0.012,
+    flapDragMultiplier: 0.0015,
+    flapPitchMoment: -0.003,
+    hasSpeedBrake: true, speedBrakeDragMultiplier: 0.6,
+    wheelBrakeFriction: 0.5,
+    approachSpeeds: [120, 100, 85, 75],
   },
   fighter: {
     name: "Fighter Aircraft",
@@ -1109,6 +1238,13 @@ const aircraftProfiles = {
     pitchStability: 0.3, dihedralStrength: 0.8, weathervaneStrength: 1.0,
     trimAoA: 1, autoLevel: false, autoLevelStrength: 0.5,
     gearDragPenalty: 0.25,
+    flapSettings: [0, 10, 20, 30],
+    flapLiftMultiplier: 0.010,
+    flapDragMultiplier: 0.0012,
+    flapPitchMoment: -0.002,
+    hasSpeedBrake: true, speedBrakeDragMultiplier: 0.55,
+    wheelBrakeFriction: 0.45,
+    approachSpeeds: [140, 115, 100, 85],
   },
 };
 let activeProfile = aircraftProfiles.trainer;
@@ -1156,6 +1292,16 @@ class FlightModel {
     this.takeoffSpeed = 60;         // m/s — minimum speed for takeoff
     this.noseWheelSteer = 0.8;      // yaw rate on ground (rad/s at full input)
 
+    // Landing system
+    this.flapSettings = activeProfile.flapSettings;
+    this.flapLiftMultiplier = activeProfile.flapLiftMultiplier;
+    this.flapDragMultiplier = activeProfile.flapDragMultiplier;
+    this.flapPitchMoment = activeProfile.flapPitchMoment;
+    this.hasSpeedBrake = activeProfile.hasSpeedBrake;
+    this.speedBrakeDragMultiplier = activeProfile.speedBrakeDragMultiplier;
+    this.wheelBrakeFriction = activeProfile.wheelBrakeFriction;
+    this.approachSpeeds = activeProfile.approachSpeeds;
+
     // Terrain callback — injected externally
     this.getGroundHeight = (x, z) => 0;
 
@@ -1188,6 +1334,12 @@ class FlightModel {
 
     // Auto-level
     this.autoLevel = activeProfile.autoLevel;
+
+    // Landing system state
+    this.flapIndex = 0;
+    this.flapAngle = 0;
+    this.speedBrakeDeployed = false;
+    this.wheelBrakeActive = false;
 
     // Inputs (set externally each frame)
     this.pitchInput = 0;   // -1 to 1
@@ -1222,7 +1374,7 @@ class FlightModel {
 
       // Aerodynamic drag (still applies on ground)
       if (this.airspeed > 0.5) {
-        const cd = this.cd0;
+        const cd = this.cd0 + this.flapAngle * this.flapDragMultiplier;
         const dragMag = cd * qS;
         const dragDir = this.velocity.normalize().scale(-1);
         totalForce = totalForce.add(dragDir.scale(dragMag));
@@ -1230,7 +1382,8 @@ class FlightModel {
 
       // Ground friction — constant force opposing motion (rolling friction = μ * weight)
       if (this.airspeed > 0.1) {
-        const frictionMag = this.groundFriction * this.mass * 9.81;
+        const mu = this.wheelBrakeActive ? this.wheelBrakeFriction : this.groundFriction;
+        const frictionMag = mu * this.mass * 9.81;
         const frictionForce = this.velocity.normalize().scale(-frictionMag);
         totalForce = totalForce.add(frictionForce);
       }
@@ -1270,9 +1423,14 @@ class FlightModel {
       this.groundHeight = this.getGroundHeight(this.position.x, this.position.z);
       this.position.y = this.groundHeight; // enforce after position update
 
-      // Stop completely at very low speed with no throttle
+      // Stop completely at very low speed with no throttle, or with wheel brakes overcoming thrust
       if (this.airspeed < 0.5 && this.throttle < 0.01) {
         this.velocity.set(0, 0, 0);
+      } else if (this.wheelBrakeActive && this.airspeed < 2) {
+        const brakeForceMag = this.wheelBrakeFriction * this.mass * 9.81;
+        if (brakeForceMag > thrustMag * 0.9) {
+          this.velocity.set(0, 0, 0);
+        }
       }
 
       // Takeoff condition: speed > threshold AND pulling back on stick
@@ -1314,11 +1472,12 @@ class FlightModel {
     // --- Unified CL ---
     let cl;
     const absAoa = Math.abs(this.aoa);
+    const effectiveClSlope = this.clSlope + this.flapAngle * this.flapLiftMultiplier;
     if (absAoa < this.stallAngle) {
-      cl = this.clSlope * this.aoa;
+      cl = effectiveClSlope * this.aoa;
       this.isStalling = false;
     } else {
-      cl = this.clSlope * Math.sign(this.aoa) * this.stallAngle * this.postStallFactor;
+      cl = effectiveClSlope * Math.sign(this.aoa) * this.stallAngle * this.postStallFactor;
       this.isStalling = true;
     }
 
@@ -1346,6 +1505,10 @@ class FlightModel {
       const cdInduced = this.cdInducedK * cl * cl;
       let cd = this.cd0 + cdInduced;
       if (this.isStalling) cd += this.cdStall;
+      // Flap drag
+      cd += this.flapAngle * this.flapDragMultiplier;
+      // Speed brake drag
+      if (this.speedBrakeDeployed) cd += this.cd0 * this.speedBrakeDragMultiplier;
       // Gear drag penalty — deployed gear adds parasitic drag
       if (this.gearProgress < 1) cd += activeProfile.gearDragPenalty * (1 - this.gearProgress);
       const dragMag = cd * qS;
@@ -1394,6 +1557,8 @@ class FlightModel {
     }
 
     this.angularVelocity.x += (pitchTorque + pitchStab) * dt;
+    // Flap pitch moment — nose-down tendency with flaps deployed
+    this.angularVelocity.x += this.flapAngle * this.flapPitchMoment * authorityScale * dt;
     this.angularVelocity.y += yawTorque * dt;
     this.angularVelocity.z += (rollTorque + dihedralTorque) * dt;
 
@@ -1449,6 +1614,8 @@ class FlightModel {
         // Force gear deployed on ground
         this.gearDown = true;
         this.gearProgress = 0;
+        // Auto-retract speed brake on touchdown
+        this.speedBrakeDeployed = false;
         // Rebuild orientation from yaw only (level the aircraft, preserve heading)
         const yaw = Math.atan2(fwd.x, -fwd.z);
         this.orientation = Quat.fromAxisAngle(new Vec3(0, 1, 0), yaw);
@@ -1720,6 +1887,33 @@ function initFlightHUD() {
     hudPools.altLabels.push(label);
   }
 
+  // --- Approach bracket bars on speed tape ---
+  hudPools.approachBrackets = [];
+  for (let i = 0; i < 2; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'approach-bracket';
+    spdStrip.appendChild(bar);
+    hudPools.approachBrackets.push(bar);
+  }
+
+  // --- ILS scale dots ---
+  const gsScale = document.getElementById('ils-gs-scale');
+  for (let i = 0; i < 5; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'ils-dot';
+    dot.style.top = (i * 25) + '%';
+    gsScale.appendChild(dot);
+  }
+  const locScale = document.getElementById('ils-loc-scale');
+  for (let i = 0; i < 5; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'ils-dot';
+    dot.style.left = (i * 25) + '%';
+    dot.style.top = '50%';
+    dot.style.transform = 'translate(-50%, -50%)';
+    locScale.appendChild(dot);
+  }
+
   // Cache DOM refs
   hudPools.dom = {
     headingReadout: document.getElementById('heading-readout'),
@@ -1738,6 +1932,13 @@ function initFlightHUD() {
     altTape: document.getElementById('alt-tape'),
     gearIndicator: document.getElementById('hud-gear'),
     autoLevelIndicator: document.getElementById('hud-autolevel'),
+    flapIndicator: document.getElementById('hud-flaps'),
+    speedBrakeIndicator: document.getElementById('hud-speedbrake'),
+    wheelBrakeIndicator: document.getElementById('hud-wheelbrake'),
+    ilsGlideslope: document.getElementById('ils-glideslope'),
+    ilsGsScale: document.getElementById('ils-gs-scale'),
+    ilsLocalizer: document.getElementById('ils-localizer'),
+    ilsLocScale: document.getElementById('ils-loc-scale'),
   };
 }
 
@@ -1955,6 +2156,73 @@ function updateHUD(model) {
 
   // === Auto-Level Indicator ===
   dom.autoLevelIndicator.style.display = model.autoLevel ? '' : 'none';
+
+  // === Flap Indicator ===
+  dom.flapIndicator.textContent = 'FLAPS ' + model.flapAngle;
+  dom.flapIndicator.style.color = model.flapAngle > 0 ? '#00ff00' : '#666666';
+
+  // === Speed Brake Indicator ===
+  dom.speedBrakeIndicator.style.display = model.speedBrakeDeployed ? '' : 'none';
+
+  // === Wheel Brake Indicator ===
+  dom.wheelBrakeIndicator.style.display = model.wheelBrakeActive ? '' : 'none';
+
+  // === Approach Speed Brackets ===
+  const showBrackets = model.gearDown && model.flapAngle > 0;
+  if (showBrackets) {
+    const approachSpd = model.approachSpeeds[model.flapIndex];
+    const spdTapeH2 = dom.speedTape.clientHeight;
+    const pxPerKt2 = spdTapeH2 / HUD_CONST.SPD_RANGE_KT;
+    for (let i = 0; i < 2; i++) {
+      const bracket = hudPools.approachBrackets[i];
+      const bracketSpd = approachSpd + (i === 0 ? 5 : -5);
+      const offset = bracketSpd - speedKt;
+      const py = spdTapeH2 / 2 - offset * pxPerKt2;
+      if (py > 0 && py < spdTapeH2) {
+        bracket.style.display = '';
+        bracket.style.top = py + 'px';
+      } else {
+        bracket.style.display = 'none';
+      }
+    }
+  } else {
+    hudPools.approachBrackets.forEach(b => b.style.display = 'none');
+  }
+
+  // === ILS Glideslope & Localizer ===
+  // Runway touchdown zone at z=-300, centerline at x=0
+  const tdZ = -300;
+  const dx = model.position.x;
+  const dz = model.position.z - tdZ;
+  const distToTD = Math.sqrt(dx * dx + dz * dz + model.position.y * model.position.y);
+  const approachAngle = Math.atan2(dz, -1) * 180 / Math.PI; // heading relative to runway
+  const withinRange = distToTD < 10000 && model.position.z > tdZ;
+
+  if (withinRange && !model.onGround) {
+    // Glideslope — deviation from 3° slope
+    const gsAngle = Math.atan2(model.position.y, Math.sqrt(dz * dz + dx * dx)) * 180 / Math.PI;
+    const gsDeviation = gsAngle - 3.0; // positive = too high
+    const gsMaxDev = 0.7; // full deflection at ±0.7°
+    const gsOffset = Math.max(-1, Math.min(1, gsDeviation / gsMaxDev)) * 60; // 60px = half of 120px scale
+
+    dom.ilsGlideslope.style.display = '';
+    dom.ilsGsScale.style.display = '';
+    dom.ilsGlideslope.style.top = 'calc(50% + ' + (-gsOffset) + 'px)';
+
+    // Localizer — lateral deviation from centerline
+    const locAngle = Math.atan2(dx, Math.abs(dz)) * 180 / Math.PI;
+    const locMaxDev = 2.5; // full deflection at ±2.5°
+    const locOffset = Math.max(-1, Math.min(1, locAngle / locMaxDev)) * 100; // 100px = half of 200px scale
+
+    dom.ilsLocalizer.style.display = '';
+    dom.ilsLocScale.style.display = '';
+    dom.ilsLocalizer.style.left = 'calc(50% + ' + locOffset + 'px)';
+  } else {
+    dom.ilsGlideslope.style.display = 'none';
+    dom.ilsGsScale.style.display = 'none';
+    dom.ilsLocalizer.style.display = 'none';
+    dom.ilsLocScale.style.display = 'none';
+  }
 
   // Crash overlay
   const crashOverlay = document.getElementById('crash-overlay');
@@ -2177,38 +2445,78 @@ function createScene(engine) {
   // Chunked terrain manager (replaces single ground mesh)
   const terrainManager = new TerrainManager(scene, null); // shadowGen set after creation
 
-  // Runway — 30m wide, 800m long, along -Z axis
-  const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 30, height: 800 }, scene);
+  // Runway — 45m wide, 2000m long, along -Z axis
+  const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 45, height: 2000 }, scene);
   runway.position.y = 0.01; // slightly above ground to prevent z-fighting
-  runway.position.z = -400; // centered so aircraft starts at near end
+  runway.position.z = -1000; // spans z=0 to z=-2000
   runway.renderingGroupId = 1;
 
-  // Runway material with center dashed line via DynamicTexture
+  // Runway material with markings via DynamicTexture
   const runwayMat = new BABYLON.StandardMaterial('runwayMat', scene);
-  const runwayTex = new BABYLON.DynamicTexture('runwayTex', { width: 128, height: 2048 }, scene);
+  const runwayTex = new BABYLON.DynamicTexture('runwayTex', { width: 256, height: 4096 }, scene);
   const rctx = runwayTex.getContext();
   // Dark gray asphalt
   rctx.fillStyle = '#333338';
-  rctx.fillRect(0, 0, 128, 2048);
+  rctx.fillRect(0, 0, 256, 4096);
   // White edge lines
   rctx.fillStyle = '#cccccc';
-  rctx.fillRect(4, 0, 3, 2048);     // left edge
-  rctx.fillRect(121, 0, 3, 2048);   // right edge
-  // Center dashed line
+  rctx.fillRect(6, 0, 4, 4096);     // left edge
+  rctx.fillRect(246, 0, 4, 4096);   // right edge
+  // Center dashed line (30px dash, 20px gap proportionally)
   rctx.fillStyle = '#ffffff';
-  for (let i = 0; i < 2048; i += 64) {
-    rctx.fillRect(62, i, 4, 40);    // 40px dash, 24px gap
+  const dashLen = 62;  // ~30m proportional
+  const gapLen = 41;   // ~20m proportional
+  for (let i = 0; i < 4096; i += dashLen + gapLen) {
+    rctx.fillRect(126, i, 4, dashLen);
   }
-  // Threshold markings at start
+  // Threshold bars at NEAR end (bottom of texture = z=0 end)
   rctx.fillStyle = '#ffffff';
   for (let s = 0; s < 8; s++) {
-    const sx = 16 + s * 12;
-    rctx.fillRect(sx, 1980, 8, 60);
+    const sx = 30 + s * 24;
+    rctx.fillRect(sx, 4010, 16, 70);
   }
+  // Threshold bars at FAR end (top of texture = z=-2000 end)
+  for (let s = 0; s < 8; s++) {
+    const sx = 30 + s * 24;
+    rctx.fillRect(sx, 16, 16, 70);
+  }
+  // Touchdown zone markings ~300m from near threshold
+  const tzNear = 4096 - Math.round(300 / 2000 * 4096);
+  rctx.fillStyle = '#ffffff';
+  rctx.fillRect(50, tzNear, 60, 8);
+  rctx.fillRect(146, tzNear, 60, 8);
+  rctx.fillRect(50, tzNear - 30, 60, 8);
+  rctx.fillRect(146, tzNear - 30, 60, 8);
+  rctx.fillRect(50, tzNear - 60, 60, 8);
+  rctx.fillRect(146, tzNear - 60, 60, 8);
+  // Touchdown zone markings ~300m from far threshold
+  const tzFar = Math.round(300 / 2000 * 4096);
+  rctx.fillRect(50, tzFar, 60, 8);
+  rctx.fillRect(146, tzFar, 60, 8);
+  rctx.fillRect(50, tzFar + 30, 60, 8);
+  rctx.fillRect(146, tzFar + 30, 60, 8);
+  rctx.fillRect(50, tzFar + 60, 60, 8);
+  rctx.fillRect(146, tzFar + 60, 60, 8);
   runwayTex.update();
   runwayMat.diffuseTexture = runwayTex;
   runwayMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
   runway.material = runwayMat;
+
+  // PAPI Lights — 4 emissive spheres at touchdown zone, left of runway
+  const papiLights = [];
+  const papiAngles = [2.5, 2.83, 3.17, 3.5]; // transition angles in degrees
+  const papiZ = -300; // touchdown zone z position
+  const papiX = -30;  // left of runway
+  for (let i = 0; i < 4; i++) {
+    const sphere = BABYLON.MeshBuilder.CreateSphere('papi' + i, { diameter: 0.6, segments: 8 }, scene);
+    sphere.position.set(papiX, 0.5, papiZ + i * 2);
+    const mat = new BABYLON.StandardMaterial('papiMat' + i, scene);
+    mat.disableLighting = true;
+    mat.emissiveColor = new BABYLON.Color3(1, 1, 1); // will be updated each frame
+    sphere.material = mat;
+    sphere.renderingGroupId = 1;
+    papiLights.push({ mesh: sphere, mat, transitionAngle: papiAngles[i] });
+  }
 
   // SkyMaterial — physically-based Rayleigh scattering sky
   const skybox = BABYLON.MeshBuilder.CreateBox('skyBox', { size: 10000 }, scene);
@@ -2280,7 +2588,7 @@ function createScene(engine) {
   cloudPlane.material = cloudMat;
   cloudPlane.renderingGroupId = 0;
 
-  return { scene, shadowGen, terrainManager, cloudPlane };
+  return { scene, shadowGen, terrainManager, cloudPlane, papiLights };
 }
 
 // ============================================================
@@ -2417,6 +2725,34 @@ function createAircraftMesh(scene) {
   const leftAileron = createAileron('leftAileron', -4.5);
   const rightAileron = createAileron('rightAileron', 4.5);
 
+  // === Flaps — like ailerons but inboard ===
+  function createFlap(name, xPos) {
+    const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
+    hinge.position.set(xPos, -0.1, 0.1);
+    hinge.parent = body;
+    const flap = BABYLON.MeshBuilder.CreateBox(name, {
+      width: 2.0, height: 0.06, depth: 0.5
+    }, scene);
+    flap.position.set(0, 0, 0.25);
+    flap.material = surfaceMat;
+    flap.parent = hinge;
+    return hinge;
+  }
+
+  const leftFlap = createFlap('leftFlap', -2.0);
+  const rightFlap = createFlap('rightFlap', 2.0);
+
+  // === Speed Brake — dorsal panel on fuselage ===
+  const speedBrakeHinge = new BABYLON.TransformNode('speedBrakeHinge', scene);
+  speedBrakeHinge.position.set(0, 0.6, 1.0);
+  speedBrakeHinge.parent = body;
+  const speedBrakePanel = BABYLON.MeshBuilder.CreateBox('speedBrake', {
+    width: 0.8, height: 0.04, depth: 0.6
+  }, scene);
+  speedBrakePanel.position.set(0, 0, 0.3);
+  speedBrakePanel.material = surfaceMat;
+  speedBrakePanel.parent = speedBrakeHinge;
+
   // === Horizontal Stabilizer — tapered ribbon ===
   function createHStab(name, side) {
     const sign = side === 'left' ? -1 : 1;
@@ -2541,6 +2877,9 @@ function createAircraftMesh(scene) {
     surfaces: {
       leftAileron,
       rightAileron,
+      leftFlap,
+      rightFlap,
+      speedBrakeHinge,
       elevator: elevatorHinge,
       rudder: rudderHinge,
       noseGearGroup,
@@ -2609,6 +2948,13 @@ class CameraManager {
       vsReadout: document.getElementById('vs-readout'),
       fpm: document.getElementById('fpm'),
       hudStall: document.getElementById('hud-stall'),
+      flapIndicator: document.getElementById('hud-flaps'),
+      speedBrakeIndicator: document.getElementById('hud-speedbrake'),
+      wheelBrakeIndicator: document.getElementById('hud-wheelbrake'),
+      ilsGlideslope: document.getElementById('ils-glideslope'),
+      ilsGsScale: document.getElementById('ils-gs-scale'),
+      ilsLocalizer: document.getElementById('ils-localizer'),
+      ilsLocScale: document.getElementById('ils-loc-scale'),
     };
   }
 
@@ -2883,6 +3229,16 @@ class CameraManager {
     els.hudThrottle.style.display = display;
     els.vsReadout.style.display = display;
     els.fpm.style.display = display;
+    els.flapIndicator.style.display = display;
+    // Speed brake, wheel brake, ILS are conditional — hide when not in full HUD
+    if (!fullHUD) {
+      els.speedBrakeIndicator.style.display = 'none';
+      els.wheelBrakeIndicator.style.display = 'none';
+      els.ilsGlideslope.style.display = 'none';
+      els.ilsGsScale.style.display = 'none';
+      els.ilsLocalizer.style.display = 'none';
+      els.ilsLocScale.style.display = 'none';
+    }
   }
 }
 
@@ -2898,7 +3254,7 @@ const input = new InputHandler();
 
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
-const { scene, shadowGen, terrainManager, cloudPlane } = createScene(engine);
+const { scene, shadowGen, terrainManager, cloudPlane, papiLights } = createScene(engine);
 const { root: aircraftMesh, surfaces } = createAircraftMesh(scene);
 const cameraManager = new CameraManager(scene);
 scene.activeCamera = cameraManager.camera;
@@ -2960,6 +3316,13 @@ function restart() {
   surfaces.rightAileron.rotation.x = 0;
   surfaces.elevator.rotation.x = 0;
   surfaces.rudder.rotation.y = 0;
+  // Reset flaps and speed brake
+  surfaces.leftFlap.rotation.x = 0;
+  surfaces.leftFlap._currentAngle = 0;
+  surfaces.rightFlap.rotation.x = 0;
+  surfaces.rightFlap._currentAngle = 0;
+  surfaces.speedBrakeHinge.rotation.x = 0;
+  surfaces.speedBrakeHinge._currentAngle = 0;
   // Reset prop disc
   surfaces.propDisc.rotation.z = 0;
   // Reset vapor trails
@@ -2999,6 +3362,19 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyC' && !model.crashed) {
     cameraManager.cycleMode(aircraftMesh);
   }
+  // Flaps — F cycles through settings, wrapping back to 0
+  if (e.code === 'KeyF' && !model.crashed) {
+    if (e.shiftKey) {
+      model.flapIndex = (model.flapIndex - 1 + model.flapSettings.length) % model.flapSettings.length;
+    } else {
+      model.flapIndex = (model.flapIndex + 1) % model.flapSettings.length;
+    }
+    model.flapAngle = model.flapSettings[model.flapIndex];
+  }
+  // Speed brake — B toggles in air
+  if (e.code === 'KeyB' && !model.crashed && !model.onGround) {
+    model.speedBrakeDeployed = !model.speedBrakeDeployed;
+  }
 });
 
 engine.runRenderLoop(() => {
@@ -3019,6 +3395,8 @@ engine.runRenderLoop(() => {
   // 1. Input — skip when crashed
   if (!model.crashed) {
     input.update(frameDt, model);
+    // Wheel brake: hold B on ground
+    model.wheelBrakeActive = model.onGround && input.keys['KeyB'];
   }
 
   // 2. Fixed timestep physics with state snapshots for interpolation
@@ -3070,6 +3448,35 @@ engine.runRenderLoop(() => {
   surfaces.elevator.rotation.x = input.smoothPitch * ELEVATOR_MAX;
   surfaces.rudder.rotation.y = input.smoothYaw * RUDDER_MAX;
 
+  // 5a. Flap animation — smooth rotation toward target angle
+  const flapTargetRad = model.flapAngle * Math.PI / 180;
+  const FLAP_RATE = 1.5; // rad/s
+  [surfaces.leftFlap, surfaces.rightFlap].forEach(flap => {
+    if (flap._currentAngle === undefined) flap._currentAngle = 0;
+    const diff = flapTargetRad - flap._currentAngle;
+    const step = FLAP_RATE * frameDt;
+    if (Math.abs(diff) < step) {
+      flap._currentAngle = flapTargetRad;
+    } else {
+      flap._currentAngle += Math.sign(diff) * step;
+    }
+    flap.rotation.x = flap._currentAngle;
+  });
+
+  // 5b. Speed brake animation — smooth rotation toward deployed/retracted angle
+  const sbTargetRad = model.speedBrakeDeployed ? -45 * Math.PI / 180 : 0;
+  const SB_RATE = 3.0; // rad/s
+  const sbHinge = surfaces.speedBrakeHinge;
+  if (sbHinge._currentAngle === undefined) sbHinge._currentAngle = 0;
+  const sbDiff = sbTargetRad - sbHinge._currentAngle;
+  const sbStep = SB_RATE * frameDt;
+  if (Math.abs(sbDiff) < sbStep) {
+    sbHinge._currentAngle = sbTargetRad;
+  } else {
+    sbHinge._currentAngle += Math.sign(sbDiff) * sbStep;
+  }
+  sbHinge.rotation.x = sbHinge._currentAngle;
+
   // 5. Landing gear animation
   const GEAR_ANIM_SPEED = 0.5; // full travel in 2 seconds
   if (model.gearDown && model.gearProgress > 0) {
@@ -3094,21 +3501,37 @@ engine.runRenderLoop(() => {
   // 8. Terrain chunk loading
   terrainManager.update(aircraftMesh.position.x, aircraftMesh.position.z);
 
-  // 9. Boundary warning
+  // 9. PAPI light update
+  for (const papi of papiLights) {
+    const dx = aircraftMesh.position.x - papi.mesh.position.x;
+    const dy = aircraftMesh.position.y - papi.mesh.position.y;
+    const dz = aircraftMesh.position.z - papi.mesh.position.z;
+    const horizDist = Math.sqrt(dx * dx + dz * dz);
+    const elevAngle = Math.atan2(dy, horizDist) * 180 / Math.PI;
+    if (elevAngle > papi.transitionAngle) {
+      // White — above glide path
+      papi.mat.emissiveColor.set(1, 1, 1);
+    } else {
+      // Red — below glide path
+      papi.mat.emissiveColor.set(1, 0, 0);
+    }
+  }
+
+  // 10. Boundary warning
   const distFromOrigin = Math.sqrt(model.position.x ** 2 + model.position.z ** 2);
   document.getElementById('boundary-warning').className = distFromOrigin > 23000 ? 'visible' : '';
 
-  // 10. Camera update
+  // 11. Camera update
   cameraManager.update(aircraftMesh, model, frameDt, input);
 
-  // 11. Cloud layer follows camera
+  // 12. Cloud layer follows camera
   cloudPlane.position.x = cameraManager.camera.position.x;
   cloudPlane.position.z = cameraManager.camera.position.z;
 
-  // 12. HUD
+  // 13. HUD
   updateHUD(model);
 
-  // 13. Render
+  // 14. Render
   scene.render();
 });
 
