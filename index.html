@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 5</title>
+<title>Flight Sim — Phase 6</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -23,6 +23,7 @@
     outline: none;
   }
   #hud {
+    display: none;
     position: fixed;
     top: 20px;
     left: 20px;
@@ -35,6 +36,399 @@
     font-size: 16px;
     line-height: 1.8;
     min-width: 340px;
+  }
+  #hud.visible { display: block; }
+
+  /* ===== Flight HUD Overlay ===== */
+  #flight-hud {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 10;
+    pointer-events: none;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    color: #00ff00;
+    text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.5);
+  }
+
+  /* Heading Tape */
+  #heading-tape {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40vw;
+    height: 32px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.35);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%);
+  }
+  #heading-tape-strip {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+  .hdg-tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 10px;
+    background: #00ff00;
+    will-change: transform;
+  }
+  .hdg-tick.major { height: 16px; }
+  .hdg-label {
+    position: absolute;
+    top: 14px;
+    font-size: 11px;
+    color: #00ff00;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    will-change: transform;
+  }
+  #heading-caret {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #00ff00;
+    z-index: 2;
+  }
+  #heading-readout {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: #00ff00;
+    text-align: center;
+  }
+
+  /* Pitch Ladder */
+  #pitch-clip {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40vw;
+    height: 50vh;
+    overflow: hidden;
+  }
+  #pitch-ladder {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+  }
+  .pitch-line {
+    position: absolute;
+    left: 50%;
+    height: 1px;
+    background: #00ff00;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.9));
+  }
+  .pitch-line.horizon {
+    width: 300px;
+    margin-left: -150px;
+    height: 2px;
+  }
+  .pitch-line.above {
+    border-top: 1px solid #00ff00;
+    background: none;
+  }
+  .pitch-line.below {
+    border-top: 1px dashed #00ff00;
+    background: none;
+  }
+  .pitch-deg-label {
+    position: absolute;
+    font-size: 10px;
+    color: #00ff00;
+    top: -6px;
+  }
+  .pitch-deg-label.left { right: 100%; margin-right: 4px; }
+  .pitch-deg-label.right { left: 100%; margin-left: 4px; }
+
+  /* Aircraft Symbol (fixed center) */
+  #aircraft-symbol {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 2px;
+    pointer-events: none;
+    z-index: 3;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.9));
+  }
+  #aircraft-symbol::before,
+  #aircraft-symbol::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    height: 2px;
+    width: 20px;
+    background: #00ff00;
+  }
+  #aircraft-symbol::before { left: 0; }
+  #aircraft-symbol::after { right: 0; }
+  #aircraft-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin: -2px 0 0 -2px;
+    background: #00ff00;
+    border-radius: 50%;
+    z-index: 3;
+  }
+
+  /* Speed Tape (left) */
+  #speed-tape {
+    position: absolute;
+    left: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 70px;
+    height: 300px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.35);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  }
+  #speed-tape-strip {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+  .spd-tick {
+    position: absolute;
+    right: 0;
+    width: 8px;
+    height: 1px;
+    background: #00ff00;
+    will-change: transform;
+  }
+  .spd-tick.major { width: 14px; }
+  .spd-label {
+    position: absolute;
+    right: 16px;
+    font-size: 11px;
+    color: #00ff00;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    will-change: transform;
+  }
+  #speed-caret {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-right: 8px solid #00ff00;
+    z-index: 2;
+  }
+  #speed-readout {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: #00ff00;
+    background: rgba(0,0,0,0.5);
+    padding: 2px 6px;
+    z-index: 3;
+  }
+
+  /* Altitude Tape (right) */
+  #alt-tape {
+    position: absolute;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 70px;
+    height: 300px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.35);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  }
+  #alt-tape-strip {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+  .alt-tick {
+    position: absolute;
+    left: 0;
+    width: 8px;
+    height: 1px;
+    background: #00ff00;
+    will-change: transform;
+  }
+  .alt-tick.major { width: 14px; }
+  .alt-label {
+    position: absolute;
+    left: 16px;
+    font-size: 11px;
+    color: #00ff00;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    will-change: transform;
+  }
+  #alt-caret {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 8px solid #00ff00;
+    z-index: 2;
+  }
+  #alt-readout {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: #00ff00;
+    background: rgba(0,0,0,0.5);
+    padding: 2px 6px;
+    z-index: 3;
+  }
+
+  /* AGL Readout */
+  #agl-readout {
+    position: absolute;
+    right: 30px;
+    top: calc(50% + 165px);
+    width: 70px;
+    text-align: center;
+    font-size: 12px;
+    color: #00ff00;
+  }
+  #agl-readout .agl-label { color: #0a0; font-size: 10px; }
+
+  /* Throttle Indicator */
+  #hud-throttle {
+    position: absolute;
+    left: 30px;
+    top: calc(50% + 170px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #hud-throttle-track {
+    width: 8px;
+    height: 80px;
+    background: rgba(0,0,0,0.35);
+    position: relative;
+    overflow: hidden;
+  }
+  #hud-throttle-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: linear-gradient(to top, #00ff00, #ffaa00);
+  }
+  #hud-throttle-label {
+    font-size: 10px;
+    color: #0a0;
+    margin-top: 2px;
+  }
+
+  /* Vertical Speed Readout */
+  #vs-readout {
+    position: absolute;
+    right: 30px;
+    top: calc(50% + 185px);
+    width: 70px;
+    text-align: center;
+    font-size: 12px;
+    color: #00ff00;
+  }
+
+  /* Flight Path Marker */
+  #fpm {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #00ff00;
+    border-radius: 50%;
+    will-change: transform;
+    display: none;
+    z-index: 4;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.9));
+  }
+  #fpm::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    width: 1.5px;
+    height: 8px;
+    background: #00ff00;
+    transform: translateX(-50%);
+  }
+  #fpm::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -10px;
+    width: 10px;
+    height: 1.5px;
+    background: #00ff00;
+    transform: translateY(-50%);
+  }
+  #fpm-right-wing {
+    position: absolute;
+    top: 50%;
+    right: -10px;
+    width: 10px;
+    height: 1.5px;
+    background: #00ff00;
+    transform: translateY(-50%);
+  }
+
+  /* Stall Warning */
+  #hud-stall {
+    position: absolute;
+    top: calc(50% - 120px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 24px;
+    font-weight: bold;
+    color: #ff0000;
+    display: none;
+    z-index: 5;
+    animation: blink 0.3s infinite;
+  }
+
+  /* State Indicator */
+  #hud-state {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
   }
   #hud h2 {
     text-align: center;
@@ -252,6 +646,63 @@
 
 <canvas id="renderCanvas"></canvas>
 
+<!-- Flight HUD Overlay -->
+<div id="flight-hud">
+  <!-- State Indicator -->
+  <div id="hud-state"></div>
+
+  <!-- Heading Tape -->
+  <div id="heading-tape">
+    <div id="heading-tape-strip"></div>
+    <div id="heading-caret"></div>
+  </div>
+  <div id="heading-readout">000</div>
+
+  <!-- Pitch Ladder -->
+  <div id="pitch-clip">
+    <div id="pitch-ladder"></div>
+  </div>
+  <div id="aircraft-symbol"></div>
+  <div id="aircraft-dot"></div>
+
+  <!-- Speed Tape -->
+  <div id="speed-tape">
+    <div id="speed-tape-strip"></div>
+    <div id="speed-caret"></div>
+    <div id="speed-readout">0</div>
+  </div>
+
+  <!-- Altitude Tape -->
+  <div id="alt-tape">
+    <div id="alt-tape-strip"></div>
+    <div id="alt-caret"></div>
+    <div id="alt-readout">0</div>
+  </div>
+
+  <!-- AGL Readout -->
+  <div id="agl-readout">
+    <div class="agl-label">AGL</div>
+    <div id="agl-value">0</div>
+  </div>
+
+  <!-- Throttle -->
+  <div id="hud-throttle">
+    <div id="hud-throttle-track">
+      <div id="hud-throttle-fill"></div>
+    </div>
+    <div id="hud-throttle-label">THR</div>
+  </div>
+
+  <!-- Vertical Speed -->
+  <div id="vs-readout">0</div>
+
+  <!-- Flight Path Marker -->
+  <div id="fpm"><div id="fpm-right-wing"></div></div>
+
+  <!-- Stall Warning -->
+  <div id="hud-stall">STALL</div>
+</div>
+
 <div id="hud">
   <h2>FLIGHT DATA</h2>
   <div class="row"><span class="label">MSL Alt</span><span class="value" id="alt">0 ft</span></div>
@@ -291,7 +742,7 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; P Pause
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
 </div>
 
 <div id="crash-overlay">
@@ -872,42 +1323,32 @@ class InputHandler {
 }
 
 // ============================================================
-// HUD — update display elements
+// Debug Panel — old HUD (toggled with backtick)
 // ============================================================
-function updateHUD(model) {
-  // Extract angles directly from orientation axes (avoids Euler convention mismatch)
+let debugPanelVisible = false;
+
+function updateDebugPanel(model) {
+  if (!debugPanelVisible) return;
+
   const forward = model.getForward();
   const up = model.getUp();
   const right = model.getRight();
   const worldUp = new Vec3(0, 1, 0);
-
-  // Pitch: how far nose is above/below horizon
   const pitchDeg = Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI;
-
-  // Roll: bank angle (positive = right wing down / right bank)
   const rollDeg = Math.atan2(-right.dot(worldUp), up.dot(worldUp)) * 180 / Math.PI;
-
-  // Heading: compass bearing (0=north/-Z, 90=east/+X)
   let headingDeg = Math.atan2(forward.x, -forward.z) * 180 / Math.PI;
   if (headingDeg < 0) headingDeg += 360;
 
-  // Unit conversions: m→ft, m/s→knots, m/s→ft/min
   const M_TO_FT = 3.28084;
   const MS_TO_KT = 1.94384;
   const MS_TO_FPM = 196.85;
 
   document.getElementById('alt').textContent   = (model.altitude * M_TO_FT).toFixed(0) + ' ft';
-
-  // AGL with color warnings (thresholds in meters: 50m ≈ 164ft, 150m ≈ 492ft)
   const aglEl = document.getElementById('agl');
   aglEl.textContent = (model.agl * M_TO_FT).toFixed(0) + ' ft';
-  if (!model.onGround && model.agl < 50) {
-    aglEl.style.color = '#f00';
-  } else if (!model.onGround && model.agl < 150) {
-    aglEl.style.color = '#ff0';
-  } else {
-    aglEl.style.color = '#0f0';
-  }
+  if (!model.onGround && model.agl < 50) aglEl.style.color = '#f00';
+  else if (!model.onGround && model.agl < 150) aglEl.style.color = '#ff0';
+  else aglEl.style.color = '#0f0';
 
   document.getElementById('spd').textContent   = (model.airspeed * MS_TO_KT).toFixed(0) + ' kt';
   document.getElementById('vs').textContent    = (model.verticalSpeed * MS_TO_FPM).toFixed(0) + ' fpm';
@@ -917,29 +1358,342 @@ function updateHUD(model) {
   document.getElementById('thr').textContent   = (model.throttle * 100).toFixed(0) + '%';
   document.getElementById('aoa').textContent   = (model.aoa * 180 / Math.PI).toFixed(1) + '°';
 
-  // Artificial horizon — roll negated so banking right tilts horizon left (pilot perspective)
   document.getElementById('horizon-ball').style.transform =
     `rotate(${-rollDeg}deg) translateY(${pitchDeg * 1.5}px)`;
-
-  // Throttle bar
   document.getElementById('throttle-fill').style.height = (model.throttle * 100) + '%';
 
   const stallEl = document.getElementById('stall');
   stallEl.className = model.isStalling ? 'stall active' : 'stall';
 
-  // Flight state badge
   const stateEl = document.getElementById('flight-state');
-  if (model.crashed) {
-    stateEl.innerHTML = '<span class="state-badge" style="background:#550000;color:#ff4444;">CRASH</span>';
-  } else if (model.onGround) {
-    stateEl.innerHTML = '<span class="state-badge gnd">GND</span>';
+  if (model.crashed) stateEl.innerHTML = '<span class="state-badge" style="background:#550000;color:#ff4444;">CRASH</span>';
+  else if (model.onGround) stateEl.innerHTML = '<span class="state-badge gnd">GND</span>';
+  else stateEl.innerHTML = '<span class="state-badge air">AIR</span>';
+}
+
+// ============================================================
+// Flight HUD — fighter-jet overlay
+// ============================================================
+const HUD_CONST = {
+  M_TO_FT: 3.28084,
+  MS_TO_KT: 1.94384,
+  MS_TO_FPM: 196.85,
+  PX_PER_DEG: 12,              // pitch ladder spacing
+  HDG_FOV_DEG: 60,              // heading tape visible range
+  HDG_TICK_STEP: 5,
+  SPD_RANGE_KT: 100,
+  SPD_TICK_STEP: 10,
+  ALT_RANGE_FT: 2000,
+  ALT_TICK_STEP: 100,
+  CARDINALS: { 0: 'N', 90: 'E', 180: 'S', 270: 'W' }
+};
+
+const hudPools = {};
+
+function initFlightHUD() {
+  // --- Heading tape pool ---
+  const hdgStrip = document.getElementById('heading-tape-strip');
+  hudPools.hdgTicks = [];
+  hudPools.hdgLabels = [];
+  for (let i = 0; i < 16; i++) {
+    const tick = document.createElement('div');
+    tick.className = 'hdg-tick';
+    hdgStrip.appendChild(tick);
+    hudPools.hdgTicks.push(tick);
+    const label = document.createElement('div');
+    label.className = 'hdg-label';
+    hdgStrip.appendChild(label);
+    hudPools.hdgLabels.push(label);
+  }
+
+  // --- Pitch ladder static lines ---
+  const ladder = document.getElementById('pitch-ladder');
+  const pitchMarks = [-30, -20, -15, -10, -5, 0, 5, 10, 15, 20, 30];
+  pitchMarks.forEach(deg => {
+    const line = document.createElement('div');
+    line.className = 'pitch-line';
+    line.style.position = 'absolute';
+    line.style.left = '50%';
+    if (deg === 0) {
+      line.classList.add('horizon');
+    } else {
+      const w = Math.abs(deg) >= 20 ? 140 : (Math.abs(deg) >= 10 ? 100 : 60);
+      line.style.width = w + 'px';
+      line.style.marginLeft = (-w / 2) + 'px';
+      if (deg > 0) line.classList.add('above');
+      else line.classList.add('below');
+      // Labels
+      const ll = document.createElement('span');
+      ll.className = 'pitch-deg-label left';
+      ll.textContent = Math.abs(deg);
+      line.appendChild(ll);
+      const lr = document.createElement('span');
+      lr.className = 'pitch-deg-label right';
+      lr.textContent = Math.abs(deg);
+      line.appendChild(lr);
+    }
+    // Position: positive deg = above center = negative Y offset
+    // We'll set these relative to center (50%); base offset from pitch-ladder transform
+    line.style.top = '50%';
+    line.style.marginTop = (-deg * HUD_CONST.PX_PER_DEG) + 'px';
+    ladder.appendChild(line);
+  });
+
+  // --- Speed tape pool ---
+  const spdStrip = document.getElementById('speed-tape-strip');
+  hudPools.spdTicks = [];
+  hudPools.spdLabels = [];
+  for (let i = 0; i < 24; i++) {
+    const tick = document.createElement('div');
+    tick.className = 'spd-tick';
+    spdStrip.appendChild(tick);
+    hudPools.spdTicks.push(tick);
+    const label = document.createElement('div');
+    label.className = 'spd-label';
+    spdStrip.appendChild(label);
+    hudPools.spdLabels.push(label);
+  }
+
+  // --- Altitude tape pool ---
+  const altStrip = document.getElementById('alt-tape-strip');
+  hudPools.altTicks = [];
+  hudPools.altLabels = [];
+  for (let i = 0; i < 24; i++) {
+    const tick = document.createElement('div');
+    tick.className = 'alt-tick';
+    altStrip.appendChild(tick);
+    hudPools.altTicks.push(tick);
+    const label = document.createElement('div');
+    label.className = 'alt-label';
+    altStrip.appendChild(label);
+    hudPools.altLabels.push(label);
+  }
+
+  // Cache DOM refs
+  hudPools.dom = {
+    headingReadout: document.getElementById('heading-readout'),
+    pitchLadder: document.getElementById('pitch-ladder'),
+    speedReadout: document.getElementById('speed-readout'),
+    altReadout: document.getElementById('alt-readout'),
+    aglValue: document.getElementById('agl-value'),
+    aglReadout: document.getElementById('agl-readout'),
+    throttleFill: document.getElementById('hud-throttle-fill'),
+    vsReadout: document.getElementById('vs-readout'),
+    fpm: document.getElementById('fpm'),
+    hudStall: document.getElementById('hud-stall'),
+    hudState: document.getElementById('hud-state'),
+    headingTape: document.getElementById('heading-tape'),
+    speedTape: document.getElementById('speed-tape'),
+    altTape: document.getElementById('alt-tape'),
+  };
+}
+
+function updateHUD(model) {
+  const dom = hudPools.dom;
+
+  // Extract angles
+  const forward = model.getForward();
+  const up = model.getUp();
+  const right = model.getRight();
+  const worldUp = new Vec3(0, 1, 0);
+
+  const pitchDeg = Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI;
+  const rollDeg = Math.atan2(-right.dot(worldUp), up.dot(worldUp)) * 180 / Math.PI;
+  let headingDeg = Math.atan2(forward.x, -forward.z) * 180 / Math.PI;
+  if (headingDeg < 0) headingDeg += 360;
+
+  const speedKt = model.airspeed * HUD_CONST.MS_TO_KT;
+  const altFt = model.altitude * HUD_CONST.M_TO_FT;
+  const aglFt = model.agl * HUD_CONST.M_TO_FT;
+  const vsFpm = model.verticalSpeed * HUD_CONST.MS_TO_FPM;
+
+  // === Heading Tape ===
+  const hdgTapeW = dom.headingTape.clientWidth;
+  const pxPerHdgDeg = hdgTapeW / HUD_CONST.HDG_FOV_DEG;
+  const halfFov = HUD_CONST.HDG_FOV_DEG / 2;
+  const centerHdg = headingDeg;
+
+  // Find nearest 5-deg tick
+  const firstTick = Math.floor((centerHdg - halfFov - 5) / HUD_CONST.HDG_TICK_STEP) * HUD_CONST.HDG_TICK_STEP;
+  for (let i = 0; i < hudPools.hdgTicks.length; i++) {
+    const tickDeg = firstTick + i * HUD_CONST.HDG_TICK_STEP;
+    let offset = tickDeg - centerHdg;
+    // Wrap around 360
+    if (offset > 180) offset -= 360;
+    if (offset < -180) offset += 360;
+    const px = hdgTapeW / 2 + offset * pxPerHdgDeg;
+
+    const tick = hudPools.hdgTicks[i];
+    const label = hudPools.hdgLabels[i];
+
+    if (px < -20 || px > hdgTapeW + 20) {
+      tick.style.display = 'none';
+      label.style.display = 'none';
+      continue;
+    }
+
+    tick.style.display = '';
+    tick.style.left = px + 'px';
+
+    let normDeg = ((tickDeg % 360) + 360) % 360;
+    const isMajor = normDeg % 10 === 0;
+    tick.className = isMajor ? 'hdg-tick major' : 'hdg-tick';
+
+    if (isMajor) {
+      label.style.display = '';
+      label.style.left = px + 'px';
+      label.textContent = String(normDeg).padStart(3, '0');
+    } else {
+      label.style.display = 'none';
+    }
+  }
+
+  // Readout shows cardinal/intercardinal direction
+  const hdgRound = Math.round(headingDeg) % 360;
+  const cardinals8 = ['N','NE','E','SE','S','SW','W','NW'];
+  const cardIdx = Math.round(hdgRound / 45) % 8;
+  dom.headingReadout.textContent = cardinals8[cardIdx];
+
+  // === Pitch Ladder ===
+  dom.pitchLadder.style.transform =
+    `translateY(${pitchDeg * HUD_CONST.PX_PER_DEG}px)`;
+
+  // === Speed Tape ===
+  const spdTapeH = dom.speedTape.clientHeight;
+  const pxPerKt = spdTapeH / HUD_CONST.SPD_RANGE_KT;
+  const spdHalf = HUD_CONST.SPD_RANGE_KT / 2;
+  const firstSpdTick = Math.floor((speedKt - spdHalf - 10) / HUD_CONST.SPD_TICK_STEP) * HUD_CONST.SPD_TICK_STEP;
+
+  for (let i = 0; i < hudPools.spdTicks.length; i++) {
+    const tickVal = firstSpdTick + i * HUD_CONST.SPD_TICK_STEP;
+    const offset = tickVal - speedKt; // positive = tick above center (speed increases up)
+    const py = spdTapeH / 2 - offset * pxPerKt;
+
+    const tick = hudPools.spdTicks[i];
+    const label = hudPools.spdLabels[i];
+
+    if (py < -20 || py > spdTapeH + 20 || tickVal < 0) {
+      tick.style.display = 'none';
+      label.style.display = 'none';
+      continue;
+    }
+
+    tick.style.display = '';
+    tick.style.top = py + 'px';
+
+    const isMajor = tickVal % 20 === 0;
+    tick.className = isMajor ? 'spd-tick major' : 'spd-tick';
+
+    if (isMajor) {
+      label.style.display = '';
+      label.style.top = py + 'px';
+      label.textContent = tickVal;
+    } else {
+      label.style.display = 'none';
+    }
+  }
+
+  dom.speedReadout.textContent = Math.round(speedKt);
+
+  // === Altitude Tape ===
+  const altTapeH = dom.altTape.clientHeight;
+  const pxPerFt = altTapeH / HUD_CONST.ALT_RANGE_FT;
+  const altHalf = HUD_CONST.ALT_RANGE_FT / 2;
+  const firstAltTick = Math.floor((altFt - altHalf - 100) / HUD_CONST.ALT_TICK_STEP) * HUD_CONST.ALT_TICK_STEP;
+
+  for (let i = 0; i < hudPools.altTicks.length; i++) {
+    const tickVal = firstAltTick + i * HUD_CONST.ALT_TICK_STEP;
+    const offset = tickVal - altFt; // positive = tick above center (alt increases up)
+    const py = altTapeH / 2 - offset * pxPerFt;
+
+    const tick = hudPools.altTicks[i];
+    const label = hudPools.altLabels[i];
+
+    if (py < -20 || py > altTapeH + 20 || tickVal < 0) {
+      tick.style.display = 'none';
+      label.style.display = 'none';
+      continue;
+    }
+
+    tick.style.display = '';
+    tick.style.top = py + 'px';
+
+    const isMajor = tickVal % 500 === 0;
+    tick.className = isMajor ? 'alt-tick major' : 'alt-tick';
+
+    if (isMajor) {
+      label.style.display = '';
+      label.style.top = py + 'px';
+      label.textContent = tickVal;
+    } else {
+      label.style.display = 'none';
+    }
+  }
+
+  dom.altReadout.textContent = Math.round(altFt);
+
+  // === AGL Readout ===
+  dom.aglValue.textContent = Math.round(aglFt);
+  if (!model.onGround && model.agl < 50) {
+    dom.aglReadout.style.color = '#ff0000';
+  } else if (!model.onGround && model.agl < 150) {
+    dom.aglReadout.style.color = '#ffff00';
   } else {
-    stateEl.innerHTML = '<span class="state-badge air">AIR</span>';
+    dom.aglReadout.style.color = '#00ff00';
+  }
+
+  // === Throttle ===
+  dom.throttleFill.style.height = (model.throttle * 100) + '%';
+
+  // === Vertical Speed ===
+  const vsAbs = Math.abs(Math.round(vsFpm));
+  const vsArrow = vsFpm > 10 ? '\u25B2' : (vsFpm < -10 ? '\u25BC' : '');
+  dom.vsReadout.textContent = vsArrow + ' ' + vsAbs;
+
+  // === Flight Path Marker ===
+  if (model.onGround || model.airspeed < 5) {
+    dom.fpm.style.display = 'none';
+  } else {
+    dom.fpm.style.display = '';
+    const velDir = model.velocity.normalize();
+    const fpmPitch = Math.atan2(-velDir.dot(up), velDir.dot(forward)) * 180 / Math.PI;
+    const fpmYaw = Math.asin(Math.max(-1, Math.min(1, velDir.dot(right)))) * 180 / Math.PI;
+
+    // Convert to pixel offset from screen center
+    const fpmX = fpmYaw * HUD_CONST.PX_PER_DEG;
+    const fpmY = -fpmPitch * HUD_CONST.PX_PER_DEG; // pitch up = move up on screen
+
+    // Clamp to viewport
+    const maxX = window.innerWidth / 2 - 30;
+    const maxY = window.innerHeight / 2 - 30;
+    const cx = Math.max(-maxX, Math.min(maxX, fpmX));
+    const cy = Math.max(-maxY, Math.min(maxY, fpmY));
+
+    dom.fpm.style.left = (window.innerWidth / 2 + cx - 8) + 'px';
+    dom.fpm.style.top = (window.innerHeight / 2 + cy - 8) + 'px';
+  }
+
+  // === Stall Warning ===
+  dom.hudStall.style.display = model.isStalling ? '' : 'none';
+
+  // === State Indicator ===
+  if (model.crashed) {
+    dom.hudState.textContent = 'CRASH';
+    dom.hudState.style.color = '#ff0000';
+  } else if (model.onGround) {
+    dom.hudState.textContent = 'GND';
+    dom.hudState.style.color = '#ffaa00';
+  } else {
+    dom.hudState.textContent = 'AIR';
+    dom.hudState.style.color = '#00aaff';
   }
 
   // Crash overlay
   const crashOverlay = document.getElementById('crash-overlay');
   crashOverlay.className = model.crashed ? 'visible' : '';
+
+  // Update debug panel if visible
+  updateDebugPanel(model);
 }
 
 // ============================================================
@@ -1256,6 +2010,9 @@ function restart() {
 
 let paused = false;
 
+// Initialize flight HUD DOM pools
+initFlightHUD();
+
 // Listen for R key to restart after crash, P/Escape to toggle pause
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && model.crashed) {
@@ -1267,6 +2024,10 @@ window.addEventListener('keydown', (e) => {
       paused = !paused;
       if (!paused) lastTime = null; // reset dt so no huge jump after unpause
     }
+  }
+  if (e.code === 'Backquote') {
+    debugPanelVisible = !debugPanelVisible;
+    document.getElementById('hud').className = debugPanelVisible ? 'visible' : '';
   }
 });
 
