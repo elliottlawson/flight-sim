@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 8</title>
+<title>Flight Sim — Phase 9</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -421,6 +421,21 @@
     animation: blink 0.3s infinite;
   }
 
+  #boundary-warning {
+    position: absolute;
+    top: calc(50% + 80px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 22px;
+    font-weight: bold;
+    color: #ff3300;
+    display: none;
+    z-index: 5;
+    animation: blink 0.5s infinite;
+    letter-spacing: 2px;
+  }
+  #boundary-warning.visible { display: block; }
+
   /* State Indicator */
   #hud-state {
     position: absolute;
@@ -727,6 +742,9 @@
 
   <!-- Auto-Level Indicator -->
   <div id="hud-autolevel">AUTOLVL</div>
+
+  <!-- Boundary Warning -->
+  <div id="boundary-warning">LEAVING AREA</div>
 </div>
 
 <div id="hud">
@@ -955,6 +973,86 @@ function getTerrainHeight(x, z) {
   const normalized = (total / maxAmp + 1) * 0.5; // [-1,1] -> [0,1]
   const height = normalized * TERRAIN_MAX_HEIGHT * flattenFactor;
   return Math.max(0, height);
+}
+
+// ============================================================
+// Bounded Terrain Height — ocean boundary blend at world edge
+// ============================================================
+const WORLD_RADIUS = 25000;
+const OCEAN_BLEND_START = 22000;
+
+function getTerrainHeightBounded(x, z) {
+  const dist = Math.sqrt(x * x + z * z);
+  if (dist > WORLD_RADIUS) return 0;
+  const h = getTerrainHeight(x, z);
+  if (dist > OCEAN_BLEND_START) {
+    const t = (dist - OCEAN_BLEND_START) / (WORLD_RADIUS - OCEAN_BLEND_START);
+    return h * (1 - t * t * (3 - 2 * t)); // smoothstep blend to 0
+  }
+  return h;
+}
+
+// ============================================================
+// Terrain Texture Generator — per-chunk slope+elevation coloring
+// ============================================================
+function generateTerrainTexture(scene, worldX, worldZ, chunkSize, texSize) {
+  const tex = new BABYLON.DynamicTexture('chunkTex', { width: texSize, height: texSize }, scene, false);
+  const ctx = tex.getContext();
+  const imgData = ctx.createImageData(texSize, texSize);
+  const sampleD = chunkSize / texSize * 0.5;
+  for (let py = 0; py < texSize; py++) {
+    for (let px = 0; px < texSize; px++) {
+      const wx = worldX + (px / (texSize - 1)) * chunkSize;
+      const wz = worldZ + (py / (texSize - 1)) * chunkSize;
+      const h = getTerrainHeightBounded(wx, wz);
+      const t = h / TERRAIN_MAX_HEIGHT;
+
+      const hpx = getTerrainHeightBounded(wx + sampleD, wz);
+      const hmx = getTerrainHeightBounded(wx - sampleD, wz);
+      const hpz = getTerrainHeightBounded(wx, wz + sampleD);
+      const hmz = getTerrainHeightBounded(wx, wz - sampleD);
+      const ddx = (hpx - hmx) / (2 * sampleD);
+      const ddz = (hpz - hmz) / (2 * sampleD);
+      const slopeAngle = Math.atan(Math.sqrt(ddx * ddx + ddz * ddz)) * 180 / Math.PI;
+
+      const noiseVal = simplex.noise2D(wx * 0.01, wz * 0.01) * 0.5 + 0.5;
+      const fineNoise = simplex.noise2D(wx * 0.05, wz * 0.05) * 15;
+
+      const grassR = 65 + noiseVal * 30 + fineNoise;
+      const grassG = 110 + noiseVal * 40 + fineNoise;
+      const grassB = 35 + noiseVal * 15;
+      const rockR = 120 + noiseVal * 35 + fineNoise;
+      const rockG = 105 + noiseVal * 25 + fineNoise;
+      const rockB = 85 + noiseVal * 20;
+      const snowR = 230 + noiseVal * 25;
+      const snowG = 235 + noiseVal * 20;
+      const snowB = 240 + noiseVal * 15;
+
+      const slopeFactor = Math.max(0, Math.min(1, (slopeAngle - 25) / 10));
+      const elevRockFactor = Math.max(0, Math.min(1, (t - 0.4) / 0.2));
+      const rockBlend = Math.max(slopeFactor, elevRockFactor * 0.6);
+
+      const snowElevFactor = Math.max(0, Math.min(1, (h - 400) / 100));
+      const snowSlopePenalty = Math.max(0, Math.min(1, (slopeAngle - 20) / 15));
+      const snowBlend = snowElevFactor * (1 - snowSlopePenalty);
+
+      let r = grassR + (rockR - grassR) * rockBlend;
+      let g = grassG + (rockG - grassG) * rockBlend;
+      let b = grassB + (rockB - grassB) * rockBlend;
+      r = r + (snowR - r) * snowBlend;
+      g = g + (snowG - g) * snowBlend;
+      b = b + (snowB - b) * snowBlend;
+
+      const idx = (py * texSize + px) * 4;
+      imgData.data[idx] = Math.max(0, Math.min(255, r | 0));
+      imgData.data[idx + 1] = Math.max(0, Math.min(255, g | 0));
+      imgData.data[idx + 2] = Math.max(0, Math.min(255, b | 0));
+      imgData.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  tex.update();
+  return tex;
 }
 
 // ============================================================
@@ -1794,6 +1892,193 @@ function updateHUD(model) {
 }
 
 // ============================================================
+// TerrainManager — chunked terrain with LOD and ocean boundary
+// ============================================================
+class TerrainManager {
+  constructor(scene, shadowGen) {
+    this.scene = scene;
+    this.shadowGen = shadowGen;
+    this.chunks = new Map();
+    this.pendingQueue = [];
+    this.CHUNK_SIZE = 2000;
+    this.LOAD_RADIUS = 14000;
+    this.UNLOAD_RADIUS = 16000;
+
+    // LOD levels: [maxDistance, subdivisions, textureSize]
+    this.LOD_LEVELS = [
+      { maxDist: 4000, subs: 50, texSize: 128 },
+      { maxDist: 8000, subs: 24, texSize: 64 },
+      { maxDist: 14000, subs: 12, texSize: 32 }
+    ];
+
+    // Ocean plane
+    const ocean = BABYLON.MeshBuilder.CreateGround('ocean', {
+      width: 60000, height: 60000, subdivisions: 1
+    }, scene);
+    ocean.position.y = -0.5;
+    const oceanMat = new BABYLON.PBRMetallicRoughnessMaterial('oceanMat', scene);
+    oceanMat.baseColor = new BABYLON.Color3(0.05, 0.12, 0.2);
+    oceanMat.metallic = 0.0;
+    oceanMat.roughness = 0.2;
+    ocean.material = oceanMat;
+    this.ocean = ocean;
+  }
+
+  _getLOD(dist) {
+    for (let i = 0; i < this.LOD_LEVELS.length; i++) {
+      if (dist < this.LOD_LEVELS[i].maxDist) return i;
+    }
+    return this.LOD_LEVELS.length - 1;
+  }
+
+  _chunkKey(gx, gz) {
+    return gx + ',' + gz;
+  }
+
+  _chunkCenter(gx, gz) {
+    return {
+      x: gx * this.CHUNK_SIZE + this.CHUNK_SIZE * 0.5,
+      z: gz * this.CHUNK_SIZE + this.CHUNK_SIZE * 0.5
+    };
+  }
+
+  update(playerX, playerZ) {
+    const CS = this.CHUNK_SIZE;
+    const loadR = this.LOAD_RADIUS;
+    const unloadR = this.UNLOAD_RADIUS;
+
+    // Grid range to check
+    const minGX = Math.floor((playerX - loadR) / CS);
+    const maxGX = Math.floor((playerX + loadR) / CS);
+    const minGZ = Math.floor((playerZ - loadR) / CS);
+    const maxGZ = Math.floor((playerZ + loadR) / CS);
+
+    // 1. Find chunks to load
+    const needed = new Set();
+    for (let gx = minGX; gx <= maxGX; gx++) {
+      for (let gz = minGZ; gz <= maxGZ; gz++) {
+        const center = this._chunkCenter(gx, gz);
+        const dx = center.x - playerX;
+        const dz = center.z - playerZ;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < loadR) {
+          const key = this._chunkKey(gx, gz);
+          needed.add(key);
+          if (!this.chunks.has(key)) {
+            this.pendingQueue.push({ gx, gz, dist, key });
+          }
+        }
+      }
+    }
+
+    // 2. Remove chunks beyond unload radius
+    for (const [key, chunk] of this.chunks) {
+      const center = this._chunkCenter(chunk.gridX, chunk.gridZ);
+      const dx = center.x - playerX;
+      const dz = center.z - playerZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > unloadR) {
+        this._removeChunk(key);
+      }
+    }
+
+    // 3. Sort pending by distance, remove duplicates
+    this.pendingQueue = this.pendingQueue.filter(p => !this.chunks.has(p.key));
+    this.pendingQueue.sort((a, b) => a.dist - b.dist);
+
+    // 4. Create up to 2 chunks per frame with time budget
+    const startTime = performance.now();
+    let created = 0;
+    while (this.pendingQueue.length > 0 && created < 2) {
+      if (created > 0 && performance.now() - startTime > 8) break;
+      const p = this.pendingQueue.shift();
+      if (!this.chunks.has(p.key)) {
+        const lod = this._getLOD(p.dist);
+        this._createChunk(p.gx, p.gz, lod);
+        created++;
+      }
+    }
+
+    // 5. LOD upgrade — max 1 per frame
+    let upgraded = false;
+    for (const [key, chunk] of this.chunks) {
+      if (upgraded) break;
+      const center = this._chunkCenter(chunk.gridX, chunk.gridZ);
+      const dx = center.x - playerX;
+      const dz = center.z - playerZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const desiredLOD = this._getLOD(dist);
+      if (desiredLOD < chunk.lod) {
+        this._removeChunk(key);
+        this._createChunk(chunk.gridX, chunk.gridZ, desiredLOD);
+        upgraded = true;
+      }
+    }
+  }
+
+  _createChunk(gx, gz, lodLevel) {
+    const CS = this.CHUNK_SIZE;
+    const lod = this.LOD_LEVELS[lodLevel];
+    const worldX = gx * CS;
+    const worldZ = gz * CS;
+
+    const mesh = BABYLON.MeshBuilder.CreateGround('chunk_' + gx + '_' + gz, {
+      width: CS, height: CS,
+      subdivisions: lod.subs,
+      updatable: false
+    }, this.scene);
+
+    // Position chunk center
+    mesh.position.x = worldX + CS * 0.5;
+    mesh.position.z = worldZ + CS * 0.5;
+
+    // Set vertex heights
+    const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    for (let i = 0; i < positions.length; i += 3) {
+      const absX = positions[i] + mesh.position.x;
+      const absZ = positions[i + 2] + mesh.position.z;
+      positions[i + 1] = getTerrainHeightBounded(absX, absZ);
+    }
+    mesh.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+
+    // Recompute and flip normals (right-handed system)
+    const normals = [];
+    BABYLON.VertexData.ComputeNormals(
+      positions,
+      mesh.getIndices(),
+      normals
+    );
+    for (let i = 0; i < normals.length; i++) normals[i] = -normals[i];
+    mesh.setVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+
+    // Per-chunk texture
+    const texture = generateTerrainTexture(this.scene, worldX, worldZ, CS, lod.texSize);
+    const material = new BABYLON.PBRMetallicRoughnessMaterial('chunkMat_' + gx + '_' + gz, this.scene);
+    material.baseTexture = texture;
+    material.metallic = 0.0;
+    material.roughness = 0.85;
+    mesh.material = material;
+    mesh.receiveShadows = true;
+
+    const key = this._chunkKey(gx, gz);
+    this.chunks.set(key, { mesh, material, texture, gridX: gx, gridZ: gz, lod: lodLevel });
+  }
+
+  _removeChunk(key) {
+    const chunk = this.chunks.get(key);
+    if (!chunk) return;
+    chunk.mesh.dispose();
+    chunk.material.dispose();
+    chunk.texture.dispose();
+    this.chunks.delete(key);
+  }
+
+  getHeightAt(x, z) {
+    return getTerrainHeightBounded(x, z);
+  }
+}
+
+// ============================================================
 // Babylon.js Scene Setup
 // ============================================================
 function createScene(engine) {
@@ -1816,109 +2101,8 @@ function createScene(engine) {
   const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5, -1, -0.3), scene);
   sun.intensity = 1.0;
 
-  // Terrain — direct vertex positioning from getTerrainHeight (no heightmap intermediary)
-  const TERRAIN_SUBS = 250;
-  const ground = BABYLON.MeshBuilder.CreateGround('terrain', {
-    width: TERRAIN_SIZE,
-    height: TERRAIN_SIZE,
-    subdivisions: TERRAIN_SUBS,
-    updatable: true
-  }, scene);
-
-  // Set vertex Y positions directly from getTerrainHeight
-  const positions = ground.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-  for (let i = 0; i < positions.length; i += 3) {
-    positions[i + 1] = getTerrainHeight(positions[i], positions[i + 2]);
-  }
-  ground.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
-
-  // Flip normals on first render — useRightHandedSystem inverts ground normals
-  let terrainNormalsFlipped = false;
-  scene.onBeforeRenderObservable.add(() => {
-    if (terrainNormalsFlipped) return;
-    const normals = ground.getVerticesData(BABYLON.VertexBuffer.NormalKind);
-    if (normals && normals[1] < 0) {
-      for (let i = 0; i < normals.length; i++) normals[i] = -normals[i];
-      ground.setVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
-      terrainNormalsFlipped = true;
-    }
-  });
-
-  // Slope + elevation terrain texture via DynamicTexture
-  const TEX_SIZE = 512;
-  const terrainTex = new BABYLON.DynamicTexture('terrainTex', { width: TEX_SIZE, height: TEX_SIZE }, scene);
-  const tctx = terrainTex.getContext();
-  const terrainImgData = tctx.createImageData(TEX_SIZE, TEX_SIZE);
-  const sampleD = TERRAIN_SIZE / TEX_SIZE * 0.5; // neighbor sample distance
-  for (let py = 0; py < TEX_SIZE; py++) {
-    for (let px = 0; px < TEX_SIZE; px++) {
-      const wx = (px / (TEX_SIZE - 1) - 0.5) * TERRAIN_SIZE;
-      const wz = (py / (TEX_SIZE - 1) - 0.5) * TERRAIN_SIZE;
-      const h = getTerrainHeight(wx, wz);
-      const t = h / TERRAIN_MAX_HEIGHT; // 0..1
-
-      // Compute slope from neighbor height differences
-      const hpx = getTerrainHeight(wx + sampleD, wz);
-      const hmx = getTerrainHeight(wx - sampleD, wz);
-      const hpz = getTerrainHeight(wx, wz + sampleD);
-      const hmz = getTerrainHeight(wx, wz - sampleD);
-      const dx = (hpx - hmx) / (2 * sampleD);
-      const dz = (hpz - hmz) / (2 * sampleD);
-      const slopeAngle = Math.atan(Math.sqrt(dx * dx + dz * dz)) * 180 / Math.PI;
-
-      // Fine-scale noise for texture variation
-      const noiseVal = simplex.noise2D(wx * 0.01, wz * 0.01) * 0.5 + 0.5; // 0..1
-      const fineNoise = simplex.noise2D(wx * 0.05, wz * 0.05) * 15;
-
-      // Layer colors
-      // Grass: green tones
-      const grassR = 65 + noiseVal * 30 + fineNoise;
-      const grassG = 110 + noiseVal * 40 + fineNoise;
-      const grassB = 35 + noiseVal * 15;
-      // Rock: gray-brown tones
-      const rockR = 120 + noiseVal * 35 + fineNoise;
-      const rockG = 105 + noiseVal * 25 + fineNoise;
-      const rockB = 85 + noiseVal * 20;
-      // Snow: white tones
-      const snowR = 230 + noiseVal * 25;
-      const snowG = 235 + noiseVal * 20;
-      const snowB = 240 + noiseVal * 15;
-
-      // Blend factors
-      // Rock increases with slope (25-35° transition) and high elevation
-      const slopeFactor = Math.max(0, Math.min(1, (slopeAngle - 25) / 10));
-      const elevRockFactor = Math.max(0, Math.min(1, (t - 0.4) / 0.2));
-      const rockBlend = Math.max(slopeFactor, elevRockFactor * 0.6);
-
-      // Snow above ~450m on relatively flat surfaces
-      const snowElevFactor = Math.max(0, Math.min(1, (h - 400) / 100));
-      const snowSlopePenalty = Math.max(0, Math.min(1, (slopeAngle - 20) / 15));
-      const snowBlend = snowElevFactor * (1 - snowSlopePenalty);
-
-      // Combine: start with grass, blend rock, then blend snow on top
-      let r = grassR + (rockR - grassR) * rockBlend;
-      let g = grassG + (rockG - grassG) * rockBlend;
-      let b = grassB + (rockB - grassB) * rockBlend;
-      r = r + (snowR - r) * snowBlend;
-      g = g + (snowG - g) * snowBlend;
-      b = b + (snowB - b) * snowBlend;
-
-      const idx = (py * TEX_SIZE + px) * 4;
-      terrainImgData.data[idx] = Math.max(0, Math.min(255, r | 0));
-      terrainImgData.data[idx + 1] = Math.max(0, Math.min(255, g | 0));
-      terrainImgData.data[idx + 2] = Math.max(0, Math.min(255, b | 0));
-      terrainImgData.data[idx + 3] = 255;
-    }
-  }
-  tctx.putImageData(terrainImgData, 0, 0);
-  terrainTex.update();
-
-  // PBR terrain material
-  const terrainMat = new BABYLON.PBRMetallicRoughnessMaterial('terrainMat', scene);
-  terrainMat.baseTexture = terrainTex;
-  terrainMat.metallic = 0.0;
-  terrainMat.roughness = 0.85;
-  ground.material = terrainMat;
+  // Chunked terrain manager (replaces single ground mesh)
+  const terrainManager = new TerrainManager(scene, null); // shadowGen set after creation
 
   // Runway — 30m wide, 800m long, along -Z axis
   const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 30, height: 800 }, scene);
@@ -1983,7 +2167,8 @@ function createScene(engine) {
   shadowGen.lambda = 0.9;
   shadowGen.cascadeBlendPercentage = 0.1;
   shadowGen.stabilizeCascades = true;
-  ground.receiveShadows = true;
+  terrainManager.shadowGen = shadowGen;
+  terrainManager.update(0, 0); // initial load around origin
 
   // Cloud layer
   const cloudPlane = BABYLON.MeshBuilder.CreateGround('clouds', { width: 20000, height: 20000, subdivisions: 1 }, scene);
@@ -2022,7 +2207,7 @@ function createScene(engine) {
   cloudPlane.material = cloudMat;
   cloudPlane.renderingGroupId = 0;
 
-  return { scene, shadowGen, ground, cloudPlane };
+  return { scene, shadowGen, terrainManager, cloudPlane };
 }
 
 // ============================================================
@@ -2341,7 +2526,7 @@ class ChaseCamera {
     BABYLON.Vector3.LerpToRef(this.smoothedTarget, desiredTarget, a, this.smoothedTarget);
 
     // Clamp camera above terrain (never underground)
-    const terrainH = getTerrainHeight(this.smoothedPosition.x, this.smoothedPosition.z);
+    const terrainH = getTerrainHeightBounded(this.smoothedPosition.x, this.smoothedPosition.z);
     if (this.smoothedPosition.y < terrainH + 2) this.smoothedPosition.y = terrainH + 2;
 
     this.camera.position.copyFrom(this.smoothedPosition);
@@ -2356,12 +2541,12 @@ const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1;
 
 const model = new FlightModel();
-model.getGroundHeight = getTerrainHeight;
+model.getGroundHeight = getTerrainHeightBounded;
 const input = new InputHandler();
 
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
-const { scene, shadowGen, ground, cloudPlane } = createScene(engine);
+const { scene, shadowGen, terrainManager, cloudPlane } = createScene(engine);
 const { root: aircraftMesh, surfaces } = createAircraftMesh(scene);
 const chaseCamera = new ChaseCamera(scene);
 scene.activeCamera = chaseCamera.camera;
@@ -2405,7 +2590,7 @@ let prevOrientation = model.orientation.clone();
 // Restart function
 function restart() {
   model.reset();
-  model.position.y = getTerrainHeight(0, 0);
+  model.position.y = getTerrainHeightBounded(0, 0);
   accumulator = 0;
   lastTime = null;
   prevPosition.set(0, model.position.y, 0);
@@ -2549,17 +2734,24 @@ engine.runRenderLoop(() => {
   const targetAlpha = gLoad > 2.0 ? Math.min(0.4, (gLoad - 2.0) * 0.15) : 0;
   trailMat.alpha += (targetAlpha - trailMat.alpha) * 3.0 * frameDt;
 
-  // 8. Cloud layer follows camera
+  // 8. Terrain chunk loading
+  terrainManager.update(aircraftMesh.position.x, aircraftMesh.position.z);
+
+  // 9. Boundary warning
+  const distFromOrigin = Math.sqrt(model.position.x ** 2 + model.position.z ** 2);
+  document.getElementById('boundary-warning').className = distFromOrigin > 23000 ? 'visible' : '';
+
+  // 10. Cloud layer follows camera
   cloudPlane.position.x = chaseCamera.camera.position.x;
   cloudPlane.position.z = chaseCamera.camera.position.z;
 
-  // 9. Chase camera
+  // 11. Chase camera
   chaseCamera.update(aircraftMesh, frameDt);
 
-  // 10. HUD
+  // 12. HUD
   updateHUD(model);
 
-  // 11. Render
+  // 13. Render
   scene.render();
 });
 
