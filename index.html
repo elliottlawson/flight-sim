@@ -436,6 +436,31 @@
   }
   #boundary-warning.visible { display: block; }
 
+  /* Cockpit Frame Vignette */
+  #cockpit-frame {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    display: none;
+    z-index: 4;
+    box-shadow: inset 0 0 80px 40px rgba(0,0,0,0.7);
+    border: 2px solid rgba(0,0,0,0.3);
+    border-radius: 8px;
+  }
+  #cockpit-frame.visible { display: block; }
+
+  /* Camera Mode Label */
+  #camera-mode {
+    position: absolute;
+    bottom: 40px;
+    left: 20px;
+    font-size: 12px;
+    color: #00ff00;
+    opacity: 0.6;
+    letter-spacing: 1px;
+  }
+
   /* State Indicator */
   #hud-state {
     position: absolute;
@@ -745,6 +770,12 @@
 
   <!-- Boundary Warning -->
   <div id="boundary-warning">LEAVING AREA</div>
+
+  <!-- Cockpit Frame Vignette -->
+  <div id="cockpit-frame"></div>
+
+  <!-- Camera Mode Label -->
+  <div id="camera-mode">CHASE</div>
 </div>
 
 <div id="hud">
@@ -786,7 +817,7 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
 </div>
 
 <div id="crash-overlay">
@@ -1454,6 +1485,15 @@ class InputHandler {
     this.smoothYaw = 0;
     this.rampRate = 5.0; // ramp toward target at 5/s
 
+    // Mouse state
+    this.mouseX = 0;
+    this.mouseY = 0;
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    this.rightMouseDown = false;
+    this.leftMouseDown = false;
+    this.wheelDelta = 0;
+
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
       e.preventDefault();
@@ -1462,6 +1502,39 @@ class InputHandler {
       this.keys[e.code] = false;
       e.preventDefault();
     });
+
+    window.addEventListener('mousemove', (e) => {
+      this.mouseX = e.clientX;
+      this.mouseY = e.clientY;
+      this.mouseDX += e.movementX;
+      this.mouseDY += e.movementY;
+    });
+    window.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.leftMouseDown = true;
+      if (e.button === 2) this.rightMouseDown = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.leftMouseDown = false;
+      if (e.button === 2) this.rightMouseDown = false;
+    });
+    window.addEventListener('wheel', (e) => {
+      this.wheelDelta += e.deltaY;
+    });
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  consumeWheel() {
+    const d = this.wheelDelta;
+    this.wheelDelta = 0;
+    return d;
+  }
+
+  consumeMouseDelta() {
+    const dx = this.mouseDX;
+    const dy = this.mouseDY;
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    return { dx, dy };
   }
 
   update(dt, model) {
@@ -2483,33 +2556,196 @@ function createAircraftMesh(scene) {
 // ============================================================
 // Chase Camera
 // ============================================================
-class ChaseCamera {
+class CameraManager {
   constructor(scene) {
-    this.camera = new BABYLON.FreeCamera('chase', BABYLON.Vector3.Zero(), scene);
-    this.camera.inputs.clear(); // prevent Babylon's default WASD/arrow controls
+    this.camera = new BABYLON.FreeCamera('cam', BABYLON.Vector3.Zero(), scene);
+    this.camera.inputs.clear();
     this.camera.minZ = 0.5;
-    this.camera.maxZ = 10000;
+    this.camera.maxZ = 50000;
     this.camera.fov = 1.0;
+    this.modes = ['chase', 'cockpit', 'flyby', 'orbit'];
+    this.currentMode = 'chase';
+    this.prevMode = null;
 
-    // Offset in aircraft local space: 5m above, 20m behind (+Z = behind)
-    this.offset = new BABYLON.Vector3(0, 5, 20);
+    // Transition state
+    this.transitioning = false;
+    this.transitionTime = 0;
+    this.transitionDuration = 0.4;
+    this.transFromPos = null;
+    this.transFromTarget = null;
 
+    // Chase state
+    this.chaseDistance = 20;
+    this.chaseHeight = 5;
+    this.freelookYaw = 0;
+    this.freelookPitch = 0;
     this.smoothedPosition = null;
     this.smoothedTarget = null;
     this.alpha = 0.08;
     this.baseDt = 1 / 60;
+
+    // Flyby state
+    this.flybyPos = null;
+    this.flybyNeedsReposition = true;
+
+    // Orbit state
+    this.orbitYaw = 0.5;
+    this.orbitPitch = 0.3;
+    this.orbitDistance = 30;
+
+    // DOM refs
+    this.cockpitFrame = document.getElementById('cockpit-frame');
+    this.cameraModeLabel = document.getElementById('camera-mode');
+    this.hudElements = {
+      headingTape: document.getElementById('heading-tape'),
+      headingReadout: document.getElementById('heading-readout'),
+      pitchClip: document.getElementById('pitch-clip'),
+      aircraftSymbol: document.getElementById('aircraft-symbol'),
+      aircraftDot: document.getElementById('aircraft-dot'),
+      speedTape: document.getElementById('speed-tape'),
+      altTape: document.getElementById('alt-tape'),
+      aglReadout: document.getElementById('agl-readout'),
+      hudThrottle: document.getElementById('hud-throttle'),
+      vsReadout: document.getElementById('vs-readout'),
+      fpm: document.getElementById('fpm'),
+      hudStall: document.getElementById('hud-stall'),
+    };
   }
 
-  update(aircraftMesh, dt) {
+  cycleMode(aircraftMesh) {
+    const idx = this.modes.indexOf(this.currentMode);
+    const nextIdx = (idx + 1) % this.modes.length;
+    this.prevMode = this.currentMode;
+    this.currentMode = this.modes[nextIdx];
+
+    // Snapshot current camera state for smooth transition
+    this.transFromPos = this.camera.position.clone();
+    this.transFromTarget = this.camera.getTarget().clone();
+    this.transitioning = true;
+    this.transitionTime = 0;
+
+    // Aircraft visibility: hide in cockpit, show otherwise
+    const hideMesh = this.currentMode === 'cockpit';
+    aircraftMesh.getChildMeshes().forEach(m => m.isVisible = !hideMesh);
+    if (aircraftMesh.isVisible !== undefined) aircraftMesh.isVisible = !hideMesh;
+
+    // Cockpit frame vignette
+    this.cockpitFrame.className = this.currentMode === 'cockpit' ? 'visible' : '';
+
+    // Mode label
+    this.cameraModeLabel.textContent = this.currentMode.toUpperCase();
+
+    // Flyby needs repositioning when switching to it
+    if (this.currentMode === 'flyby') this.flybyNeedsReposition = true;
+
+    // Reset freelook when leaving chase
+    if (this.prevMode === 'chase') {
+      this.freelookYaw = 0;
+      this.freelookPitch = 0;
+    }
+
+    // HUD visibility
+    this._setHUDMode(this.currentMode);
+  }
+
+  reset() {
+    // Restore to chase mode
+    if (this.currentMode === 'cockpit') {
+      this.cockpitFrame.className = '';
+    }
+    this.currentMode = 'chase';
+    this.prevMode = null;
+    this.transitioning = false;
+    this.smoothedPosition = null;
+    this.smoothedTarget = null;
+    this.freelookYaw = 0;
+    this.freelookPitch = 0;
+    this.chaseDistance = 20;
+    this.flybyNeedsReposition = true;
+    this.orbitYaw = 0.5;
+    this.orbitPitch = 0.3;
+    this.orbitDistance = 30;
+    this.cameraModeLabel.textContent = 'CHASE';
+    this._setHUDMode('chase');
+  }
+
+  update(aircraftMesh, model, dt, input) {
+    // Compute the desired position/target for current mode
+    let desiredPos, desiredTarget;
+
+    switch (this.currentMode) {
+      case 'chase':
+        ({ pos: desiredPos, target: desiredTarget } = this._updateChase(aircraftMesh, dt, input));
+        break;
+      case 'cockpit':
+        input.consumeWheel(); input.consumeMouseDelta();
+        ({ pos: desiredPos, target: desiredTarget } = this._updateCockpit(aircraftMesh, dt));
+        break;
+      case 'flyby':
+        input.consumeWheel(); input.consumeMouseDelta();
+        ({ pos: desiredPos, target: desiredTarget } = this._updateFlyby(aircraftMesh, model, dt));
+        break;
+      case 'orbit':
+        ({ pos: desiredPos, target: desiredTarget } = this._updateOrbit(aircraftMesh, dt, input));
+        break;
+    }
+
+    // Handle transition blending
+    if (this.transitioning) {
+      this.transitionTime += dt;
+      const t = Math.min(this.transitionTime / this.transitionDuration, 1);
+      // Smooth ease-in-out
+      const smooth = t * t * (3 - 2 * t);
+
+      const blendedPos = BABYLON.Vector3.Lerp(this.transFromPos, desiredPos, smooth);
+      const blendedTarget = BABYLON.Vector3.Lerp(this.transFromTarget, desiredTarget, smooth);
+
+      this.camera.position.copyFrom(blendedPos);
+      this.camera.setTarget(blendedTarget);
+
+      if (t >= 1) this.transitioning = false;
+    } else {
+      this.camera.position.copyFrom(desiredPos);
+      this.camera.setTarget(desiredTarget);
+    }
+  }
+
+  _updateChase(aircraftMesh, dt, input) {
     const meshQ = aircraftMesh.rotationQuaternion;
     const meshPos = aircraftMesh.position;
 
-    // Rotate offset by aircraft orientation to get desired world position
-    const offsetWorld = new BABYLON.Vector3(0, 0, 0);
-    const rotMatrix = new BABYLON.Matrix();
-    BABYLON.Matrix.FromQuaternionToRef(meshQ, rotMatrix);
-    BABYLON.Vector3.TransformCoordinatesToRef(this.offset, rotMatrix, offsetWorld);
+    // Scroll to zoom
+    const wheel = input.consumeWheel();
+    if (wheel !== 0) {
+      this.chaseDistance = Math.max(5, Math.min(100, this.chaseDistance + wheel * 0.02));
+      // Adjust height proportionally
+      this.chaseHeight = this.chaseDistance * 0.25;
+    }
 
+    // Right-click freelook
+    const mouse = input.consumeMouseDelta();
+    if (input.rightMouseDown) {
+      this.freelookYaw += mouse.dx * 0.003;
+      this.freelookPitch += mouse.dy * 0.003;
+      this.freelookPitch = Math.max(-1.2, Math.min(1.2, this.freelookPitch));
+    } else {
+      // Lerp back to center when released
+      this.freelookYaw *= Math.pow(0.05, dt);
+      this.freelookPitch *= Math.pow(0.05, dt);
+      if (Math.abs(this.freelookYaw) < 0.001) this.freelookYaw = 0;
+      if (Math.abs(this.freelookPitch) < 0.001) this.freelookPitch = 0;
+    }
+
+    // Build offset with freelook applied
+    const offset = new BABYLON.Vector3(0, this.chaseHeight, this.chaseDistance);
+
+    // Apply freelook rotation around vertical and lateral axes
+    const freelookQ = BABYLON.Quaternion.RotationYawPitchRoll(this.freelookYaw, this.freelookPitch, 0);
+    const rotMatrix = new BABYLON.Matrix();
+    const combinedQ = meshQ.multiply(freelookQ);
+    BABYLON.Matrix.FromQuaternionToRef(combinedQ, rotMatrix);
+
+    const offsetWorld = BABYLON.Vector3.TransformCoordinates(offset, rotMatrix);
     const desiredPos = meshPos.add(offsetWorld);
     const desiredTarget = meshPos.clone();
 
@@ -2519,18 +2755,134 @@ class ChaseCamera {
       this.smoothedTarget = desiredTarget.clone();
     }
 
-    // Frame-rate adjusted lerp alpha
+    // Frame-rate adjusted lerp
     const a = 1 - Math.pow(1 - this.alpha, dt / this.baseDt);
-
     BABYLON.Vector3.LerpToRef(this.smoothedPosition, desiredPos, a, this.smoothedPosition);
     BABYLON.Vector3.LerpToRef(this.smoothedTarget, desiredTarget, a, this.smoothedTarget);
 
-    // Clamp camera above terrain (never underground)
+    // Terrain clamp
     const terrainH = getTerrainHeightBounded(this.smoothedPosition.x, this.smoothedPosition.z);
     if (this.smoothedPosition.y < terrainH + 2) this.smoothedPosition.y = terrainH + 2;
 
-    this.camera.position.copyFrom(this.smoothedPosition);
-    this.camera.setTarget(this.smoothedTarget);
+    return { pos: this.smoothedPosition.clone(), target: this.smoothedTarget.clone() };
+  }
+
+  _updateCockpit(aircraftMesh, dt) {
+    const meshQ = aircraftMesh.rotationQuaternion;
+    const meshPos = aircraftMesh.position;
+
+    // Cockpit offset in local space: slightly above and forward of body center
+    const cockpitLocal = new BABYLON.Vector3(0, 1.85, -1.8);
+    const rotMatrix = new BABYLON.Matrix();
+    BABYLON.Matrix.FromQuaternionToRef(meshQ, rotMatrix);
+    const cockpitWorld = BABYLON.Vector3.TransformCoordinates(cockpitLocal, rotMatrix);
+
+    const pos = meshPos.add(cockpitWorld);
+
+    // Look forward along aircraft heading
+    const forwardLocal = new BABYLON.Vector3(0, 0, -100);
+    const forwardWorld = BABYLON.Vector3.TransformCoordinates(forwardLocal, rotMatrix);
+    const target = meshPos.add(forwardWorld);
+
+    return { pos, target };
+  }
+
+  _updateFlyby(aircraftMesh, model, dt) {
+    const meshPos = aircraftMesh.position;
+
+    // Check if we need to reposition
+    if (this.flybyNeedsReposition || !this.flybyPos) {
+      this._repositionFlyby(meshPos, model);
+    } else {
+      // Reposition if aircraft has passed camera by >600m
+      const toAircraft = meshPos.subtract(this.flybyPos);
+      const vel = new BABYLON.Vector3(model.velocity.x, model.velocity.y, -model.velocity.z);
+      const speed = vel.length();
+      if (speed > 1) {
+        const velDir = vel.normalize();
+        const behind = BABYLON.Vector3.Dot(toAircraft, velDir);
+        if (behind < -600) {
+          this._repositionFlyby(meshPos, model);
+        }
+      }
+    }
+
+    const target = meshPos.clone();
+    return { pos: this.flybyPos.clone(), target };
+  }
+
+  _repositionFlyby(meshPos, model) {
+    const vel = new BABYLON.Vector3(model.velocity.x, model.velocity.y, -model.velocity.z);
+    const speed = vel.length();
+    let ahead;
+    if (speed > 1) {
+      ahead = vel.normalize();
+    } else {
+      ahead = new BABYLON.Vector3(0, 0, -1);
+    }
+
+    // Place 500m ahead, 150m to side, 30m below
+    const side = BABYLON.Vector3.Cross(ahead, BABYLON.Vector3.Up()).normalize();
+    const sideSign = Math.random() > 0.5 ? 1 : -1;
+
+    this.flybyPos = meshPos.add(
+      ahead.scale(500).add(side.scale(150 * sideSign)).add(new BABYLON.Vector3(0, -30, 0))
+    );
+
+    // Terrain clamp
+    const terrainH = getTerrainHeightBounded(this.flybyPos.x, this.flybyPos.z);
+    if (this.flybyPos.y < terrainH + 5) this.flybyPos.y = terrainH + 5;
+
+    this.flybyNeedsReposition = false;
+  }
+
+  _updateOrbit(aircraftMesh, dt, input) {
+    const meshPos = aircraftMesh.position;
+
+    // Mouse drag adjusts orbit angles
+    const mouse = input.consumeMouseDelta();
+    if (input.leftMouseDown) {
+      this.orbitYaw += mouse.dx * 0.005;
+      this.orbitPitch -= mouse.dy * 0.005;
+      this.orbitPitch = Math.max(-0.2, Math.min(1.4, this.orbitPitch));
+    }
+
+    // Scroll adjusts distance
+    const wheel = input.consumeWheel();
+    if (wheel !== 0) {
+      this.orbitDistance = Math.max(5, Math.min(200, this.orbitDistance + wheel * 0.05));
+    }
+
+    // Spherical to cartesian
+    const x = this.orbitDistance * Math.cos(this.orbitPitch) * Math.sin(this.orbitYaw);
+    const y = this.orbitDistance * Math.sin(this.orbitPitch);
+    const z = this.orbitDistance * Math.cos(this.orbitPitch) * Math.cos(this.orbitYaw);
+
+    const pos = meshPos.add(new BABYLON.Vector3(x, y, z));
+
+    // Terrain clamp
+    const terrainH = getTerrainHeightBounded(pos.x, pos.z);
+    if (pos.y < terrainH + 2) pos.y = terrainH + 2;
+
+    const target = meshPos.clone();
+    return { pos, target };
+  }
+
+  _setHUDMode(mode) {
+    const fullHUD = (mode === 'chase' || mode === 'cockpit');
+    const els = this.hudElements;
+    const display = fullHUD ? '' : 'none';
+    els.headingTape.style.display = display;
+    els.headingReadout.style.display = display;
+    els.pitchClip.style.display = display;
+    els.aircraftSymbol.style.display = display;
+    els.aircraftDot.style.display = display;
+    els.speedTape.style.display = display;
+    els.altTape.style.display = display;
+    els.aglReadout.style.display = display;
+    els.hudThrottle.style.display = display;
+    els.vsReadout.style.display = display;
+    els.fpm.style.display = display;
   }
 }
 
@@ -2548,11 +2900,11 @@ const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
 const { scene, shadowGen, terrainManager, cloudPlane } = createScene(engine);
 const { root: aircraftMesh, surfaces } = createAircraftMesh(scene);
-const chaseCamera = new ChaseCamera(scene);
-scene.activeCamera = chaseCamera.camera;
+const cameraManager = new CameraManager(scene);
+scene.activeCamera = cameraManager.camera;
 
 // Rendering Pipeline — bloom, FXAA, tone mapping
-const pipeline = new BABYLON.DefaultRenderingPipeline('pipeline', true, scene, [chaseCamera.camera]);
+const pipeline = new BABYLON.DefaultRenderingPipeline('pipeline', true, scene, [cameraManager.camera]);
 pipeline.fxaaEnabled = true;
 pipeline.bloomEnabled = true;
 pipeline.bloomThreshold = 0.8;
@@ -2595,9 +2947,10 @@ function restart() {
   lastTime = null;
   prevPosition.set(0, model.position.y, 0);
   prevOrientation = new Quat(0, 0, 0, 1);
-  // Reset camera smoothing
-  chaseCamera.smoothedPosition = null;
-  chaseCamera.smoothedTarget = null;
+  // Reset camera
+  cameraManager.reset();
+  // Restore aircraft visibility (in case we were in cockpit mode)
+  aircraftMesh.getChildMeshes().forEach(m => m.isVisible = true);
   // Reset gear mesh rotations
   surfaces.noseGearGroup.rotation.x = 0;
   surfaces.leftGearGroup.rotation.z = 0;
@@ -2641,6 +2994,10 @@ window.addEventListener('keydown', (e) => {
   // Toggle auto-level
   if (e.code === 'KeyL' && !model.crashed) {
     model.autoLevel = !model.autoLevel;
+  }
+  // Cycle camera mode
+  if (e.code === 'KeyC' && !model.crashed) {
+    cameraManager.cycleMode(aircraftMesh);
   }
 });
 
@@ -2741,12 +3098,12 @@ engine.runRenderLoop(() => {
   const distFromOrigin = Math.sqrt(model.position.x ** 2 + model.position.z ** 2);
   document.getElementById('boundary-warning').className = distFromOrigin > 23000 ? 'visible' : '';
 
-  // 10. Cloud layer follows camera
-  cloudPlane.position.x = chaseCamera.camera.position.x;
-  cloudPlane.position.z = chaseCamera.camera.position.z;
+  // 10. Camera update
+  cameraManager.update(aircraftMesh, model, frameDt, input);
 
-  // 11. Chase camera
-  chaseCamera.update(aircraftMesh, frameDt);
+  // 11. Cloud layer follows camera
+  cloudPlane.position.x = cameraManager.camera.position.x;
+  cloudPlane.position.z = cameraManager.camera.position.z;
 
   // 12. HUD
   updateHUD(model);
