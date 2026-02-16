@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 4</title>
+<title>Flight Sim — Phase 5</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -254,9 +254,10 @@
 
 <div id="hud">
   <h2>FLIGHT DATA</h2>
-  <div class="row"><span class="label">Altitude</span><span class="value" id="alt">0 m</span></div>
-  <div class="row"><span class="label">Airspeed</span><span class="value" id="spd">0 m/s</span></div>
-  <div class="row"><span class="label">Vert Speed</span><span class="value" id="vs">0 m/s</span></div>
+  <div class="row"><span class="label">MSL Alt</span><span class="value" id="alt">0 ft</span></div>
+  <div class="row"><span class="label">AGL</span><span class="value" id="agl">0 ft</span></div>
+  <div class="row"><span class="label">Airspeed</span><span class="value" id="spd">0 kt</span></div>
+  <div class="row"><span class="label">Vert Speed</span><span class="value" id="vs">0 fpm</span></div>
   <div class="row"><span class="label">Pitch</span><span class="value" id="pitch">0°</span></div>
   <div class="row"><span class="label">Roll</span><span class="value" id="roll">0°</span></div>
   <div class="row"><span class="label">Heading</span><span class="value" id="hdg">0°</span></div>
@@ -388,6 +389,98 @@ class Quat {
 }
 
 // ============================================================
+// SimplexNoise — 2D simplex noise (Stefan Gustavson algorithm)
+// ============================================================
+class SimplexNoise {
+  constructor(seed = 0) {
+    this.grad3 = [
+      [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+      [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+      [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+    ];
+    const p = new Uint8Array(256);
+    // Simple seeded PRNG
+    let s = seed;
+    for (let i = 0; i < 256; i++) {
+      s = (s * 16807 + 0) % 2147483647;
+      p[i] = s & 255;
+    }
+    this.perm = new Uint8Array(512);
+    this.permMod12 = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) {
+      this.perm[i] = p[i & 255];
+      this.permMod12[i] = this.perm[i] % 12;
+    }
+  }
+
+  noise2D(x, y) {
+    const F2 = 0.5 * (Math.sqrt(3) - 1);
+    const G2 = (3 - Math.sqrt(3)) / 6;
+    const s = (x + y) * F2;
+    const i = Math.floor(x + s);
+    const j = Math.floor(y + s);
+    const t = (i + j) * G2;
+    const X0 = i - t, Y0 = j - t;
+    const x0 = x - X0, y0 = y - Y0;
+    let i1, j1;
+    if (x0 > y0) { i1 = 1; j1 = 0; } else { i1 = 0; j1 = 1; }
+    const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+    const x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+    const ii = i & 255, jj = j & 255;
+    const gi0 = this.permMod12[ii + this.perm[jj]];
+    const gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]];
+    const gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]];
+    let n0 = 0, n1 = 0, n2 = 0;
+    let t0 = 0.5 - x0 * x0 - y0 * y0;
+    if (t0 >= 0) { t0 *= t0; n0 = t0 * t0 * (this.grad3[gi0][0] * x0 + this.grad3[gi0][1] * y0); }
+    let t1 = 0.5 - x1 * x1 - y1 * y1;
+    if (t1 >= 0) { t1 *= t1; n1 = t1 * t1 * (this.grad3[gi1][0] * x1 + this.grad3[gi1][1] * y1); }
+    let t2 = 0.5 - x2 * x2 - y2 * y2;
+    if (t2 >= 0) { t2 *= t2; n2 = t2 * t2 * (this.grad3[gi2][0] * x2 + this.grad3[gi2][1] * y2); }
+    return 70 * (n0 + n1 + n2); // returns [-1, 1]
+  }
+}
+
+// ============================================================
+// Terrain Height Function — source of truth for physics & visuals
+// ============================================================
+const simplex = new SimplexNoise(42);
+const TERRAIN_SIZE = 10000;
+const TERRAIN_MAX_HEIGHT = 600;
+
+function getTerrainHeight(x, z) {
+  // Flat zone for runway: |x| < 40 AND z in [-850, 50]
+  if (Math.abs(x) < 40 && z > -850 && z < 50) return 0;
+
+  // Wide flat airfield zone (600m) with gentle transition out to 1500m
+  const dist = Math.sqrt(x * x + z * z);
+  if (dist < 600) return 0;
+  let flattenFactor = 1.0;
+  if (dist < 1500) {
+    const t = (dist - 600) / 900;
+    flattenFactor = t * t * (3 - 2 * t); // smoothstep
+  }
+
+  // 4-octave fBm simplex noise
+  const scale = 1 / 1200; // base frequency
+  let amplitude = 1.0;
+  let frequency = 1.0;
+  let total = 0;
+  let maxAmp = 0;
+  for (let o = 0; o < 4; o++) {
+    total += amplitude * simplex.noise2D(x * scale * frequency, z * scale * frequency);
+    maxAmp += amplitude;
+    amplitude *= 0.5;
+    frequency *= 2.0;
+  }
+
+  // Normalize to [0, 1] then scale
+  const normalized = (total / maxAmp + 1) * 0.5; // [-1,1] -> [0,1]
+  const height = normalized * TERRAIN_MAX_HEIGHT * flattenFactor;
+  return Math.max(0, height);
+}
+
+// ============================================================
 // FlightModel — core physics
 // ============================================================
 class FlightModel {
@@ -430,6 +523,9 @@ class FlightModel {
     this.takeoffSpeed = 60;         // m/s — minimum speed for takeoff
     this.noseWheelSteer = 0.8;      // yaw rate on ground (rad/s at full input)
 
+    // Terrain callback — injected externally
+    this.getGroundHeight = (x, z) => 0;
+
     // --- State ---
     this.reset();
   }
@@ -446,6 +542,9 @@ class FlightModel {
     this.verticalSpeed = 0;
     this.aoa = 0;
     this.isStalling = false;
+
+    this.groundHeight = 0;
+    this.agl = 0;
 
     this.onGround = true;
     this.crashed = false;
@@ -521,13 +620,15 @@ class FlightModel {
       // Kill angular velocity on ground
       this.angularVelocity.set(0, 0, 0);
 
-      // Clamp to ground
-      this.position.y = 0;
+      // Clamp to ground (terrain-relative)
+      this.groundHeight = this.getGroundHeight(this.position.x, this.position.z);
+      this.position.y = this.groundHeight;
       this.velocity.y = 0;
 
       // Update position
       this.position = this.position.add(this.velocity.scale(dt));
-      this.position.y = 0; // enforce after position update
+      this.groundHeight = this.getGroundHeight(this.position.x, this.position.z);
+      this.position.y = this.groundHeight; // enforce after position update
 
       // Stop completely at very low speed with no throttle
       if (this.airspeed < 0.5 && this.throttle < 0.01) {
@@ -550,7 +651,8 @@ class FlightModel {
       this.isStalling = false;
 
       // Update derived values
-      this.altitude = 0;
+      this.altitude = this.position.y;
+      this.agl = this.position.y - this.groundHeight;
       this.verticalSpeed = 0;
       return;
     }
@@ -671,8 +773,9 @@ class FlightModel {
     // --- Update position ---
     this.position = this.position.add(this.velocity.scale(dt));
 
-    // --- Landing / Crash Detection ---
-    if (this.position.y <= 0) {
+    // --- Landing / Crash Detection (terrain-relative) ---
+    this.groundHeight = this.getGroundHeight(this.position.x, this.position.z);
+    if (this.position.y <= this.groundHeight) {
       const descentRate = -this.velocity.y; // positive = descending
       const fwd = this.getForward();
       const rt = this.getRight();
@@ -683,7 +786,7 @@ class FlightModel {
       if (descentRate < 3 && Math.abs(pitchDeg) < 15 && Math.abs(rollDeg) < 30) {
         // Safe landing
         this.onGround = true;
-        this.position.y = 0;
+        this.position.y = this.groundHeight;
         this.velocity.y = 0;
         this.angularVelocity.set(0, 0, 0);
         // Rebuild orientation from yaw only (level the aircraft, preserve heading)
@@ -692,7 +795,7 @@ class FlightModel {
       } else {
         // Crash
         this.crashed = true;
-        this.position.y = 0;
+        this.position.y = this.groundHeight;
         this.velocity.set(0, 0, 0);
         this.angularVelocity.set(0, 0, 0);
       }
@@ -706,6 +809,7 @@ class FlightModel {
 
     // --- Update derived values ---
     this.altitude = this.position.y;
+    this.agl = this.position.y - this.groundHeight;
     this.verticalSpeed = this.velocity.y;
   }
 }
@@ -787,9 +891,26 @@ function updateHUD(model) {
   let headingDeg = Math.atan2(forward.x, -forward.z) * 180 / Math.PI;
   if (headingDeg < 0) headingDeg += 360;
 
-  document.getElementById('alt').textContent   = model.altitude.toFixed(1) + ' m';
-  document.getElementById('spd').textContent   = model.airspeed.toFixed(1) + ' m/s';
-  document.getElementById('vs').textContent    = model.verticalSpeed.toFixed(1) + ' m/s';
+  // Unit conversions: m→ft, m/s→knots, m/s→ft/min
+  const M_TO_FT = 3.28084;
+  const MS_TO_KT = 1.94384;
+  const MS_TO_FPM = 196.85;
+
+  document.getElementById('alt').textContent   = (model.altitude * M_TO_FT).toFixed(0) + ' ft';
+
+  // AGL with color warnings (thresholds in meters: 50m ≈ 164ft, 150m ≈ 492ft)
+  const aglEl = document.getElementById('agl');
+  aglEl.textContent = (model.agl * M_TO_FT).toFixed(0) + ' ft';
+  if (!model.onGround && model.agl < 50) {
+    aglEl.style.color = '#f00';
+  } else if (!model.onGround && model.agl < 150) {
+    aglEl.style.color = '#ff0';
+  } else {
+    aglEl.style.color = '#0f0';
+  }
+
+  document.getElementById('spd').textContent   = (model.airspeed * MS_TO_KT).toFixed(0) + ' kt';
+  document.getElementById('vs').textContent    = (model.verticalSpeed * MS_TO_FPM).toFixed(0) + ' fpm';
   document.getElementById('pitch').textContent = pitchDeg.toFixed(1) + '°';
   document.getElementById('roll').textContent  = rollDeg.toFixed(1) + '°';
   document.getElementById('hdg').textContent   = headingDeg.toFixed(0) + '°';
@@ -838,21 +959,80 @@ function createScene(engine) {
   const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5, -1, -0.3), scene);
   sun.intensity = 0.8;
 
-  // Ground — 10km x 10km with grid material
-  const ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 10000, height: 10000 }, scene);
-  const gridMat = new BABYLON.GridMaterial('gridMat', scene);
-  gridMat.majorUnitFrequency = 100;
-  gridMat.minorUnitVisibility = 0.3;
-  gridMat.gridRatio = 10;
-  gridMat.mainColor = new BABYLON.Color3(0.25, 0.4, 0.2);
-  gridMat.lineColor = new BABYLON.Color3(0.35, 0.55, 0.3);
-  gridMat.backFaceCulling = false;
-  ground.material = gridMat;
+  // Terrain — direct vertex positioning from getTerrainHeight (no heightmap intermediary)
+  const TERRAIN_SUBS = 250;
+  const ground = BABYLON.MeshBuilder.CreateGround('terrain', {
+    width: TERRAIN_SIZE,
+    height: TERRAIN_SIZE,
+    subdivisions: TERRAIN_SUBS,
+    updatable: true
+  }, scene);
+
+  // Set vertex Y positions directly from getTerrainHeight
+  const positions = ground.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i + 1] = getTerrainHeight(positions[i], positions[i + 2]);
+  }
+  ground.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+
+  // Flip normals on first render — useRightHandedSystem inverts ground normals
+  let terrainNormalsFlipped = false;
+  scene.onBeforeRenderObservable.add(() => {
+    if (terrainNormalsFlipped) return;
+    const normals = ground.getVerticesData(BABYLON.VertexBuffer.NormalKind);
+    if (normals && normals[1] < 0) {
+      for (let i = 0; i < normals.length; i++) normals[i] = -normals[i];
+      ground.setVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+      terrainNormalsFlipped = true;
+    }
+  });
+
+  // Altitude-based color texture via DynamicTexture
+  const terrainMat = new BABYLON.StandardMaterial('terrainMat', scene);
+  const terrainTex = new BABYLON.DynamicTexture('terrainTex', { width: 512, height: 512 }, scene);
+  const tctx = terrainTex.getContext();
+  const terrainImgData = tctx.createImageData(512, 512);
+  for (let py = 0; py < 512; py++) {
+    for (let px = 0; px < 512; px++) {
+      const wx = (px / 511 - 0.5) * TERRAIN_SIZE;
+      const wz = (py / 511 - 0.5) * TERRAIN_SIZE;
+      const h = getTerrainHeight(wx, wz);
+      const t = h / TERRAIN_MAX_HEIGHT; // 0..1
+      let r, g, b;
+      if (t < 0.25) {
+        // Green lowland
+        r = 60 + t * 200; g = 120 + t * 200; b = 40;
+      } else if (t < 0.5) {
+        // Brown midland
+        const u = (t - 0.25) / 0.25;
+        r = 110 + u * 50; g = 170 - u * 70; b = 40 + u * 20;
+      } else if (t < 0.75) {
+        // Gray highland
+        const u = (t - 0.5) / 0.25;
+        r = 130 + u * 40; g = 120 + u * 20; b = 100 + u * 30;
+      } else {
+        // White peaks
+        const u = (t - 0.75) / 0.25;
+        r = 180 + u * 75; g = 175 + u * 80; b = 165 + u * 90;
+      }
+      const idx = (py * 512 + px) * 4;
+      terrainImgData.data[idx] = r | 0;
+      terrainImgData.data[idx + 1] = g | 0;
+      terrainImgData.data[idx + 2] = b | 0;
+      terrainImgData.data[idx + 3] = 255;
+    }
+  }
+  tctx.putImageData(terrainImgData, 0, 0);
+  terrainTex.update();
+  terrainMat.diffuseTexture = terrainTex;
+  terrainMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  ground.material = terrainMat;
 
   // Runway — 30m wide, 800m long, along -Z axis
   const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 30, height: 800 }, scene);
   runway.position.y = 0.01; // slightly above ground to prevent z-fighting
   runway.position.z = -400; // centered so aircraft starts at near end
+  runway.renderingGroupId = 1;
 
   // Runway material with center dashed line via DynamicTexture
   const runwayMat = new BABYLON.StandardMaterial('runwayMat', scene);
@@ -882,7 +1062,7 @@ function createScene(engine) {
   runway.material = runwayMat;
 
   // Sky sphere
-  const sky = BABYLON.MeshBuilder.CreateSphere('sky', { diameter: 9000, segments: 16 }, scene);
+  const sky = BABYLON.MeshBuilder.CreateSphere('sky', { diameter: 18000, segments: 16 }, scene);
   sky.infiniteDistance = true;
   const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
   skyMat.backFaceCulling = false;
@@ -904,8 +1084,8 @@ function createScene(engine) {
 
   // Fog — hides ground edges
   scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
-  scene.fogStart = 3000;
-  scene.fogEnd = 5000;
+  scene.fogStart = 4000;
+  scene.fogEnd = 8000;
   scene.fogColor = new BABYLON.Color3(0.78, 0.87, 0.91); // match horizon
 
   return scene;
@@ -976,6 +1156,9 @@ function createAircraftMesh(scene) {
   vStab.material = lightGrayMat;
   vStab.parent = body;
 
+  // Render aircraft on top of terrain (same group as runway)
+  root.getChildMeshes().forEach(m => m.renderingGroupId = 1);
+
   root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
   return root;
 }
@@ -1025,8 +1208,9 @@ class ChaseCamera {
     BABYLON.Vector3.LerpToRef(this.smoothedPosition, desiredPos, a, this.smoothedPosition);
     BABYLON.Vector3.LerpToRef(this.smoothedTarget, desiredTarget, a, this.smoothedTarget);
 
-    // Clamp camera Y >= 2m (never underground)
-    if (this.smoothedPosition.y < 2) this.smoothedPosition.y = 2;
+    // Clamp camera above terrain (never underground)
+    const terrainH = getTerrainHeight(this.smoothedPosition.x, this.smoothedPosition.z);
+    if (this.smoothedPosition.y < terrainH + 2) this.smoothedPosition.y = terrainH + 2;
 
     this.camera.position.copyFrom(this.smoothedPosition);
     this.camera.setTarget(this.smoothedTarget);
@@ -1040,6 +1224,7 @@ const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1;
 
 const model = new FlightModel();
+model.getGroundHeight = getTerrainHeight;
 const input = new InputHandler();
 
 const canvas = document.getElementById('renderCanvas');
@@ -1059,9 +1244,10 @@ let prevOrientation = model.orientation.clone();
 // Restart function
 function restart() {
   model.reset();
+  model.position.y = getTerrainHeight(0, 0);
   accumulator = 0;
   lastTime = null;
-  prevPosition.set(0, 0, 0);
+  prevPosition.set(0, model.position.y, 0);
   prevOrientation = new Quat(0, 0, 0, 1);
   // Reset camera smoothing
   chaseCamera.smoothedPosition = null;
