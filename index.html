@@ -1092,7 +1092,7 @@ const TERRAIN_SIZE = 10000;
 const TERRAIN_MAX_HEIGHT = 600;
 
 function getTerrainHeight(x, z) {
-  // Flat airfield zone around the full runway (z=0 to z=-2000, centered at z=-1000)
+  // Flat airfield zone around the full runway (z=0 to z=-2000)
   // Use distance to nearest point on runway centerline for a rounded-rectangle shape
   const rwyMinZ = -2200, rwyMaxZ = 200;
   const clampedZ = Math.max(rwyMinZ, Math.min(rwyMaxZ, z));
@@ -1100,12 +1100,12 @@ function getTerrainHeight(x, z) {
   const dz = Math.abs(z - clampedZ);
   const distToRunway = Math.sqrt(dx * dx + dz * dz);
 
-  // Inner flat zone: 300m from runway centerline — slightly below runway to avoid z-fighting
-  if (distToRunway < 300) return -0.05;
-  // Transition zone: 300m to 2000m — smoothstep from flat to full terrain
+  // Inner flat zone: 400m from runway centerline — completely flat
+  if (distToRunway < 400) return 0;
+  // Transition zone: 400m to 5000m — very gentle smoothstep to full terrain
   let flattenFactor = 1.0;
-  if (distToRunway < 2000) {
-    const t = (distToRunway - 300) / 1700;
+  if (distToRunway < 5000) {
+    const t = (distToRunway - 400) / 4600;
     flattenFactor = t * t * (3 - 2 * t); // smoothstep
   }
 
@@ -2447,7 +2447,7 @@ function createScene(engine) {
 
   // Runway — 45m wide, 2000m long, along -Z axis
   const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 45, height: 2000 }, scene);
-  runway.position.y = 0.01; // slightly above ground to prevent z-fighting
+  runway.position.y = 0.05; // above ground to prevent z-fighting
   runway.position.z = -1000; // spans z=0 to z=-2000
   runway.renderingGroupId = 1;
 
