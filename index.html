@@ -2260,7 +2260,7 @@ class TerrainManager {
     const oceanMat = new BABYLON.PBRMetallicRoughnessMaterial('oceanMat', scene);
     oceanMat.baseColor = new BABYLON.Color3(0.05, 0.12, 0.2);
     oceanMat.metallic = 0.0;
-    oceanMat.roughness = 0.2;
+    oceanMat.roughness = 0.7;
     ocean.material = oceanMat;
     this.ocean = ocean;
   }
@@ -2391,6 +2391,20 @@ class TerrainManager {
     );
     for (let i = 0; i < normals.length; i++) normals[i] = -normals[i];
     mesh.setVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+
+    // Fix frustum culling for flat terrain: when all vertices are at the same
+    // height, the bounding box has zero Y extent and can be incorrectly culled.
+    // Pad the bounding info to ensure it always has volume.
+    mesh.refreshBoundingInfo();
+    const bi = mesh.getBoundingInfo();
+    const bMin = bi.minimum;
+    const bMax = bi.maximum;
+    if (bMax.y - bMin.y < 1) {
+      mesh.setBoundingInfo(new BABYLON.BoundingInfo(
+        new BABYLON.Vector3(bMin.x, bMin.y - 1, bMin.z),
+        new BABYLON.Vector3(bMax.x, bMax.y + 1, bMax.z)
+      ));
+    }
 
     // Per-chunk texture
     const texture = generateTerrainTexture(this.scene, worldX, worldZ, CS, lod.texSize);
