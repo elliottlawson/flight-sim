@@ -689,6 +689,50 @@
     letter-spacing: 1px;
   }
 
+  /* Restore Points */
+  #restore-points {
+    position: absolute;
+    top: 20px;
+    right: 40px;
+    display: flex;
+    gap: 6px;
+  }
+  .restore-slot {
+    width: 32px;
+    height: 32px;
+    border: 1.5px solid #444;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    color: #444;
+    background: rgba(0,0,0,0.3);
+    transition: all 0.2s;
+  }
+  .restore-slot.filled {
+    border-color: #00ccff;
+    color: #00ccff;
+    background: rgba(0,204,255,0.1);
+  }
+  .restore-slot.flash {
+    border-color: #00ff88;
+    color: #00ff88;
+    background: rgba(0,255,136,0.25);
+  }
+  #restore-toast {
+    position: absolute;
+    top: 58px;
+    right: 40px;
+    font-size: 11px;
+    color: #00ccff;
+    opacity: 0;
+    transition: opacity 0.3s;
+    white-space: nowrap;
+  }
+  #restore-toast.visible { opacity: 1; }
+
   /* Flaps Indicator */
   #hud-flaps {
     position: absolute;
@@ -885,6 +929,14 @@
   <div id="ils-loc-scale"></div>
   <div id="ils-localizer"></div>
 
+  <!-- Restore Points -->
+  <div id="restore-points">
+    <div class="restore-slot" id="rp-slot-0">1</div>
+    <div class="restore-slot" id="rp-slot-1">2</div>
+    <div class="restore-slot" id="rp-slot-2">3</div>
+  </div>
+  <div id="restore-toast"></div>
+
   <!-- Boundary Warning -->
   <div id="boundary-warning">LEAVING AREA</div>
 
@@ -934,7 +986,7 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; F Flaps &nbsp;|&nbsp; B Brake &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; F Flaps &nbsp;|&nbsp; B Brake &nbsp;|&nbsp; Q Save &nbsp;|&nbsp; 1-3 Load &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; P Pause
 </div>
 
 <div id="crash-overlay">
@@ -3347,6 +3399,131 @@ function restart() {
   trailMat.alpha = 0;
 }
 
+// ============================================================
+// Restore Points — save/load flight state (FIFO, max 3 slots)
+// ============================================================
+const restorePoints = [];
+const MAX_RESTORE_POINTS = 3;
+let _restoreToastTimer = null;
+
+function saveRestorePoint() {
+  const snapshot = {
+    // FlightModel state
+    position: model.position.clone(),
+    velocity: model.velocity.clone(),
+    orientation: model.orientation.clone(),
+    angularVelocity: model.angularVelocity.clone(),
+    throttle: model.throttle,
+    airspeed: model.airspeed,
+    altitude: model.altitude,
+    verticalSpeed: model.verticalSpeed,
+    aoa: model.aoa,
+    isStalling: model.isStalling,
+    groundHeight: model.groundHeight,
+    agl: model.agl,
+    onGround: model.onGround,
+    gearDown: model.gearDown,
+    gearProgress: model.gearProgress,
+    autoLevel: model.autoLevel,
+    flapIndex: model.flapIndex,
+    flapAngle: model.flapAngle,
+    speedBrakeDeployed: model.speedBrakeDeployed,
+    // Mesh animation state
+    leftFlapAngle: surfaces.leftFlap._currentAngle || 0,
+    rightFlapAngle: surfaces.rightFlap._currentAngle || 0,
+    speedBrakeAngle: surfaces.speedBrakeHinge._currentAngle || 0,
+    // Display info
+    altFt: Math.round(model.altitude * 3.28084),
+    speedKt: Math.round(model.airspeed * 1.94384),
+    timestamp: performance.now(),
+  };
+
+  restorePoints.push(snapshot);
+  if (restorePoints.length > MAX_RESTORE_POINTS) {
+    restorePoints.shift(); // FIFO — drop oldest
+  }
+
+  updateRestorePointUI();
+  showRestoreToast('SAVED — slot ' + restorePoints.length);
+}
+
+function loadRestorePoint(slotIndex) {
+  if (slotIndex < 0 || slotIndex >= restorePoints.length) return;
+  const snap = restorePoints[slotIndex];
+
+  // Restore FlightModel state
+  model.position.copy(snap.position);
+  model.velocity.copy(snap.velocity);
+  model.orientation = snap.orientation.clone();
+  model.angularVelocity.copy(snap.angularVelocity);
+  model.throttle = snap.throttle;
+  model.airspeed = snap.airspeed;
+  model.altitude = snap.altitude;
+  model.verticalSpeed = snap.verticalSpeed;
+  model.aoa = snap.aoa;
+  model.isStalling = snap.isStalling;
+  model.groundHeight = snap.groundHeight;
+  model.agl = snap.agl;
+  model.onGround = snap.onGround;
+  model.crashed = false;
+  model.gearDown = snap.gearDown;
+  model.gearProgress = snap.gearProgress;
+  model.autoLevel = snap.autoLevel;
+  model.flapIndex = snap.flapIndex;
+  model.flapAngle = snap.flapAngle;
+  model.speedBrakeDeployed = snap.speedBrakeDeployed;
+  model.wheelBrakeActive = false;
+
+  // Restore mesh animation state
+  surfaces.leftFlap._currentAngle = snap.leftFlapAngle;
+  surfaces.leftFlap.rotation.x = snap.leftFlapAngle;
+  surfaces.rightFlap._currentAngle = snap.rightFlapAngle;
+  surfaces.rightFlap.rotation.x = snap.rightFlapAngle;
+  surfaces.speedBrakeHinge._currentAngle = snap.speedBrakeAngle;
+  surfaces.speedBrakeHinge.rotation.x = snap.speedBrakeAngle;
+
+  // Sync gear meshes
+  surfaces.noseGearGroup.rotation.x = model.gearProgress * Math.PI / 2;
+  surfaces.leftGearGroup.rotation.z = model.gearProgress * Math.PI / 2;
+  surfaces.rightGearGroup.rotation.z = -model.gearProgress * Math.PI / 2;
+
+  // Sync interpolation state
+  prevPosition.copy(model.position);
+  prevOrientation = model.orientation.clone();
+  accumulator = 0;
+  lastTime = null;
+
+  // Ensure aircraft is visible
+  aircraftMesh.getChildMeshes().forEach(m => m.isVisible = true);
+
+  // Flash the loaded slot
+  updateRestorePointUI(slotIndex);
+  showRestoreToast('LOADED — slot ' + (slotIndex + 1));
+}
+
+function updateRestorePointUI(flashIndex) {
+  for (let i = 0; i < MAX_RESTORE_POINTS; i++) {
+    const el = document.getElementById('rp-slot-' + i);
+    if (i < restorePoints.length) {
+      el.className = 'restore-slot filled';
+      if (i === flashIndex) {
+        el.className = 'restore-slot flash';
+        setTimeout(() => { el.className = 'restore-slot filled'; }, 400);
+      }
+    } else {
+      el.className = 'restore-slot';
+    }
+  }
+}
+
+function showRestoreToast(msg) {
+  const toast = document.getElementById('restore-toast');
+  toast.textContent = msg;
+  toast.className = 'visible';
+  if (_restoreToastTimer) clearTimeout(_restoreToastTimer);
+  _restoreToastTimer = setTimeout(() => { toast.className = ''; }, 1500);
+}
+
 let paused = false;
 
 // Initialize flight HUD DOM pools
@@ -3388,6 +3565,22 @@ window.addEventListener('keydown', (e) => {
       model.flapIndex = (model.flapIndex + 1) % model.flapSettings.length;
     }
     model.flapAngle = model.flapSettings[model.flapIndex];
+  }
+  // Restore points — Q to save, 1/2/3 to load
+  if (e.code === 'KeyQ' && !model.crashed) {
+    saveRestorePoint();
+  }
+  if (e.code === 'Digit1' && restorePoints.length >= 1) {
+    loadRestorePoint(0);
+    paused = false;
+  }
+  if (e.code === 'Digit2' && restorePoints.length >= 2) {
+    loadRestorePoint(1);
+    paused = false;
+  }
+  if (e.code === 'Digit3' && restorePoints.length >= 3) {
+    loadRestorePoint(2);
+    paused = false;
   }
   // Speed brake — B toggles in air
   if (e.code === 'KeyB' && !model.crashed && !model.onGround) {
