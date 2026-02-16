@@ -2256,7 +2256,7 @@ class TerrainManager {
     const ocean = BABYLON.MeshBuilder.CreateGround('ocean', {
       width: 60000, height: 60000, subdivisions: 1
     }, scene);
-    ocean.position.y = -0.5;
+    ocean.position.y = -5;
     const oceanMat = new BABYLON.PBRMetallicRoughnessMaterial('oceanMat', scene);
     oceanMat.baseColor = new BABYLON.Color3(0.05, 0.12, 0.2);
     oceanMat.metallic = 0.0;
@@ -2916,6 +2916,10 @@ class CameraManager {
     this.camera.minZ = 0.5;
     this.camera.maxZ = 50000;
     this.camera.fov = 1.0;
+    // Logarithmic depth buffer — essential for flight sims where near (cockpit)
+    // and far (50km terrain) objects coexist. Eliminates z-fighting between
+    // terrain and ocean across all distances.
+    this.camera.useLogarithmicDepth = true;
     this.modes = ['chase', 'cockpit', 'flyby', 'orbit'];
     this.currentMode = 'chase';
     this.prevMode = null;
