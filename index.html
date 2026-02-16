@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 7</title>
+<title>Flight Sim — Phase 8</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -1811,10 +1811,10 @@ function createScene(engine) {
 
   // Lights
   const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.6;
+  hemi.intensity = 0.4;
 
   const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5, -1, -0.3), scene);
-  sun.intensity = 0.8;
+  sun.intensity = 1.0;
 
   // Terrain — direct vertex positioning from getTerrainHeight (no heightmap intermediary)
   const TERRAIN_SUBS = 250;
@@ -1844,45 +1844,80 @@ function createScene(engine) {
     }
   });
 
-  // Altitude-based color texture via DynamicTexture
-  const terrainMat = new BABYLON.StandardMaterial('terrainMat', scene);
-  const terrainTex = new BABYLON.DynamicTexture('terrainTex', { width: 512, height: 512 }, scene);
+  // Slope + elevation terrain texture via DynamicTexture
+  const TEX_SIZE = 512;
+  const terrainTex = new BABYLON.DynamicTexture('terrainTex', { width: TEX_SIZE, height: TEX_SIZE }, scene);
   const tctx = terrainTex.getContext();
-  const terrainImgData = tctx.createImageData(512, 512);
-  for (let py = 0; py < 512; py++) {
-    for (let px = 0; px < 512; px++) {
-      const wx = (px / 511 - 0.5) * TERRAIN_SIZE;
-      const wz = (py / 511 - 0.5) * TERRAIN_SIZE;
+  const terrainImgData = tctx.createImageData(TEX_SIZE, TEX_SIZE);
+  const sampleD = TERRAIN_SIZE / TEX_SIZE * 0.5; // neighbor sample distance
+  for (let py = 0; py < TEX_SIZE; py++) {
+    for (let px = 0; px < TEX_SIZE; px++) {
+      const wx = (px / (TEX_SIZE - 1) - 0.5) * TERRAIN_SIZE;
+      const wz = (py / (TEX_SIZE - 1) - 0.5) * TERRAIN_SIZE;
       const h = getTerrainHeight(wx, wz);
       const t = h / TERRAIN_MAX_HEIGHT; // 0..1
-      let r, g, b;
-      if (t < 0.25) {
-        // Green lowland
-        r = 60 + t * 200; g = 120 + t * 200; b = 40;
-      } else if (t < 0.5) {
-        // Brown midland
-        const u = (t - 0.25) / 0.25;
-        r = 110 + u * 50; g = 170 - u * 70; b = 40 + u * 20;
-      } else if (t < 0.75) {
-        // Gray highland
-        const u = (t - 0.5) / 0.25;
-        r = 130 + u * 40; g = 120 + u * 20; b = 100 + u * 30;
-      } else {
-        // White peaks
-        const u = (t - 0.75) / 0.25;
-        r = 180 + u * 75; g = 175 + u * 80; b = 165 + u * 90;
-      }
-      const idx = (py * 512 + px) * 4;
-      terrainImgData.data[idx] = r | 0;
-      terrainImgData.data[idx + 1] = g | 0;
-      terrainImgData.data[idx + 2] = b | 0;
+
+      // Compute slope from neighbor height differences
+      const hpx = getTerrainHeight(wx + sampleD, wz);
+      const hmx = getTerrainHeight(wx - sampleD, wz);
+      const hpz = getTerrainHeight(wx, wz + sampleD);
+      const hmz = getTerrainHeight(wx, wz - sampleD);
+      const dx = (hpx - hmx) / (2 * sampleD);
+      const dz = (hpz - hmz) / (2 * sampleD);
+      const slopeAngle = Math.atan(Math.sqrt(dx * dx + dz * dz)) * 180 / Math.PI;
+
+      // Fine-scale noise for texture variation
+      const noiseVal = simplex.noise2D(wx * 0.01, wz * 0.01) * 0.5 + 0.5; // 0..1
+      const fineNoise = simplex.noise2D(wx * 0.05, wz * 0.05) * 15;
+
+      // Layer colors
+      // Grass: green tones
+      const grassR = 65 + noiseVal * 30 + fineNoise;
+      const grassG = 110 + noiseVal * 40 + fineNoise;
+      const grassB = 35 + noiseVal * 15;
+      // Rock: gray-brown tones
+      const rockR = 120 + noiseVal * 35 + fineNoise;
+      const rockG = 105 + noiseVal * 25 + fineNoise;
+      const rockB = 85 + noiseVal * 20;
+      // Snow: white tones
+      const snowR = 230 + noiseVal * 25;
+      const snowG = 235 + noiseVal * 20;
+      const snowB = 240 + noiseVal * 15;
+
+      // Blend factors
+      // Rock increases with slope (25-35° transition) and high elevation
+      const slopeFactor = Math.max(0, Math.min(1, (slopeAngle - 25) / 10));
+      const elevRockFactor = Math.max(0, Math.min(1, (t - 0.4) / 0.2));
+      const rockBlend = Math.max(slopeFactor, elevRockFactor * 0.6);
+
+      // Snow above ~450m on relatively flat surfaces
+      const snowElevFactor = Math.max(0, Math.min(1, (h - 400) / 100));
+      const snowSlopePenalty = Math.max(0, Math.min(1, (slopeAngle - 20) / 15));
+      const snowBlend = snowElevFactor * (1 - snowSlopePenalty);
+
+      // Combine: start with grass, blend rock, then blend snow on top
+      let r = grassR + (rockR - grassR) * rockBlend;
+      let g = grassG + (rockG - grassG) * rockBlend;
+      let b = grassB + (rockB - grassB) * rockBlend;
+      r = r + (snowR - r) * snowBlend;
+      g = g + (snowG - g) * snowBlend;
+      b = b + (snowB - b) * snowBlend;
+
+      const idx = (py * TEX_SIZE + px) * 4;
+      terrainImgData.data[idx] = Math.max(0, Math.min(255, r | 0));
+      terrainImgData.data[idx + 1] = Math.max(0, Math.min(255, g | 0));
+      terrainImgData.data[idx + 2] = Math.max(0, Math.min(255, b | 0));
       terrainImgData.data[idx + 3] = 255;
     }
   }
   tctx.putImageData(terrainImgData, 0, 0);
   terrainTex.update();
-  terrainMat.diffuseTexture = terrainTex;
-  terrainMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+
+  // PBR terrain material
+  const terrainMat = new BABYLON.PBRMetallicRoughnessMaterial('terrainMat', scene);
+  terrainMat.baseTexture = terrainTex;
+  terrainMat.metallic = 0.0;
+  terrainMat.roughness = 0.85;
   ground.material = terrainMat;
 
   // Runway — 30m wide, 800m long, along -Z axis
@@ -1918,34 +1953,76 @@ function createScene(engine) {
   runwayMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
   runway.material = runwayMat;
 
-  // Sky sphere
-  const sky = BABYLON.MeshBuilder.CreateSphere('sky', { diameter: 18000, segments: 16 }, scene);
-  sky.infiniteDistance = true;
-  const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
+  // SkyMaterial — physically-based Rayleigh scattering sky
+  const skybox = BABYLON.MeshBuilder.CreateBox('skyBox', { size: 10000 }, scene);
+  const skyMat = new BABYLON.SkyMaterial('skyMat', scene);
   skyMat.backFaceCulling = false;
-  skyMat.disableLighting = true;
-  // Dynamic texture for gradient sky
-  const skyTex = new BABYLON.DynamicTexture('skyTex', { width: 1, height: 256 }, scene);
-  const ctx = skyTex.getContext();
-  const gradient = ctx.createLinearGradient(0, 0, 0, 256);
-  gradient.addColorStop(0.0, '#0a1a3f');   // dark blue top
-  gradient.addColorStop(0.4, '#2266aa');   // mid blue
-  gradient.addColorStop(0.7, '#88bbdd');   // pale blue
-  gradient.addColorStop(1.0, '#c8dde8');   // horizon
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 1, 256);
-  skyTex.update();
-  skyMat.diffuseTexture = skyTex;
-  skyMat.emissiveTexture = skyTex;
-  sky.material = skyMat;
+  skyMat.luminance = 1.0;
+  skyMat.turbidity = 3;
+  skyMat.rayleigh = 1.5;
+  skyMat.mieCoefficient = 0.005;
+  skyMat.mieDirectionalG = 0.8;
+  skyMat.useSunPosition = true;
+  skyMat.sunPosition = new BABYLON.Vector3(-50, 100, -30);
+  skybox.material = skyMat;
+  skybox.infiniteDistance = true;
 
-  // Fog — hides ground edges
-  scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
-  scene.fogStart = 4000;
-  scene.fogEnd = 8000;
-  scene.fogColor = new BABYLON.Color3(0.78, 0.87, 0.91); // match horizon
+  // Align directional light with sky sun
+  const sunDir = skyMat.sunPosition.negate().normalize();
+  sun.direction = sunDir;
 
-  return scene;
+  // Fog — exponential for natural atmospheric depth
+  scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+  scene.fogDensity = 0.00005;
+  scene.fogColor = new BABYLON.Color3(0.76, 0.84, 0.90);
+
+  // Cascaded Shadow Generator
+  const shadowGen = new BABYLON.CascadedShadowGenerator(2048, sun);
+  shadowGen.bias = 0.005;
+  shadowGen.normalBias = 0.02;
+  shadowGen.lambda = 0.9;
+  shadowGen.cascadeBlendPercentage = 0.1;
+  shadowGen.stabilizeCascades = true;
+  ground.receiveShadows = true;
+
+  // Cloud layer
+  const cloudPlane = BABYLON.MeshBuilder.CreateGround('clouds', { width: 20000, height: 20000, subdivisions: 1 }, scene);
+  cloudPlane.position.y = 2500;
+  const cloudMat = new BABYLON.StandardMaterial('cloudMat', scene);
+  cloudMat.disableLighting = true;
+  cloudMat.backFaceCulling = false;
+  const cloudTex = new BABYLON.DynamicTexture('cloudTex', { width: 1024, height: 1024 }, scene);
+  const cctx = cloudTex.getContext();
+  const cloudImgData = cctx.createImageData(1024, 1024);
+  for (let cy = 0; cy < 1024; cy++) {
+    for (let cx = 0; cx < 1024; cx++) {
+      const u = cx / 1024;
+      const v = cy / 1024;
+      // Multi-octave noise for cloud shapes
+      let cloudNoise = 0;
+      cloudNoise += simplex.noise2D(u * 4, v * 4) * 0.5;
+      cloudNoise += simplex.noise2D(u * 8 + 100, v * 8 + 100) * 0.25;
+      cloudNoise += simplex.noise2D(u * 16 + 200, v * 16 + 200) * 0.125;
+      // Remap to [0,1] and apply threshold for cloud shapes
+      const cloudVal = (cloudNoise + 0.5);
+      const cloudAlpha = Math.max(0, Math.min(1, (cloudVal - 0.3) / 0.4));
+      const ci = (cy * 1024 + cx) * 4;
+      cloudImgData.data[ci] = 255;
+      cloudImgData.data[ci + 1] = 255;
+      cloudImgData.data[ci + 2] = 255;
+      cloudImgData.data[ci + 3] = (cloudAlpha * 180) | 0;
+    }
+  }
+  cctx.putImageData(cloudImgData, 0, 0);
+  cloudTex.update();
+  cloudMat.diffuseTexture = cloudTex;
+  cloudMat.opacityTexture = cloudTex;
+  cloudMat.useAlphaFromDiffuseTexture = true;
+  cloudMat.emissiveColor = new BABYLON.Color3(0.95, 0.95, 0.95);
+  cloudPlane.material = cloudMat;
+  cloudPlane.renderingGroupId = 0;
+
+  return { scene, shadowGen, ground, cloudPlane };
 }
 
 // ============================================================
@@ -2176,6 +2253,26 @@ function createAircraftMesh(scene) {
   const leftGearGroup = createGearAssembly('leftGear', { x: -1.5, y: -0.3, z: 0 });
   const rightGearGroup = createGearAssembly('rightGear', { x: 1.5, y: -0.3, z: 0 });
 
+  // === Wingtip Transform Nodes for vapor trails ===
+  const leftWingTip = new BABYLON.TransformNode('leftWingTip', scene);
+  leftWingTip.position.set(-6, -0.1, -0.5);
+  leftWingTip.parent = body;
+
+  const rightWingTip = new BABYLON.TransformNode('rightWingTip', scene);
+  rightWingTip.position.set(6, -0.1, -0.5);
+  rightWingTip.parent = body;
+
+  // === Prop Disc — spinning translucent disc at nose ===
+  const propDisc = BABYLON.MeshBuilder.CreateDisc('propDisc', { radius: 0.8, tessellation: 24 }, scene);
+  propDisc.position.set(0, 0, -5.0);
+  propDisc.rotation.x = Math.PI / 2;
+  propDisc.parent = body;
+  const propMat = new BABYLON.StandardMaterial('propMat', scene);
+  propMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+  propMat.alpha = 0.15;
+  propMat.backFaceCulling = false;
+  propDisc.material = propMat;
+
   // Render aircraft on top of terrain (same group as runway)
   root.getChildMeshes().forEach(m => m.renderingGroupId = 1);
 
@@ -2191,6 +2288,9 @@ function createAircraftMesh(scene) {
       noseGearGroup,
       leftGearGroup,
       rightGearGroup,
+      leftWingTip,
+      rightWingTip,
+      propDisc,
     }
   };
 }
@@ -2261,10 +2361,39 @@ const input = new InputHandler();
 
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
-const scene = createScene(engine);
+const { scene, shadowGen, ground, cloudPlane } = createScene(engine);
 const { root: aircraftMesh, surfaces } = createAircraftMesh(scene);
 const chaseCamera = new ChaseCamera(scene);
 scene.activeCamera = chaseCamera.camera;
+
+// Rendering Pipeline — bloom, FXAA, tone mapping
+const pipeline = new BABYLON.DefaultRenderingPipeline('pipeline', true, scene, [chaseCamera.camera]);
+pipeline.fxaaEnabled = true;
+pipeline.bloomEnabled = true;
+pipeline.bloomThreshold = 0.8;
+pipeline.bloomWeight = 0.3;
+pipeline.bloomKernel = 64;
+pipeline.bloomScale = 0.5;
+pipeline.imageProcessingEnabled = true;
+pipeline.imageProcessing.toneMappingEnabled = true;
+pipeline.imageProcessing.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
+pipeline.imageProcessing.exposure = 1.2;
+pipeline.imageProcessing.contrast = 1.1;
+
+// Register aircraft as shadow caster
+aircraftMesh.getChildMeshes().forEach(m => shadowGen.addShadowCaster(m));
+
+// Wingtip vapor trails
+const trailMat = new BABYLON.StandardMaterial('trailMat', scene);
+trailMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+trailMat.emissiveColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+trailMat.alpha = 0;
+trailMat.backFaceCulling = false;
+
+const leftTrail = new BABYLON.TrailMesh('leftTrail', surfaces.leftWingTip, scene, 0.15, 90, true);
+leftTrail.material = trailMat;
+const rightTrail = new BABYLON.TrailMesh('rightTrail', surfaces.rightWingTip, scene, 0.15, 90, true);
+rightTrail.material = trailMat;
 
 let lastTime = null;
 let accumulator = 0;
@@ -2293,6 +2422,10 @@ function restart() {
   surfaces.rightAileron.rotation.x = 0;
   surfaces.elevator.rotation.x = 0;
   surfaces.rudder.rotation.y = 0;
+  // Reset prop disc
+  surfaces.propDisc.rotation.z = 0;
+  // Reset vapor trails
+  trailMat.alpha = 0;
 }
 
 let paused = false;
@@ -2406,13 +2539,27 @@ engine.runRenderLoop(() => {
   surfaces.leftGearGroup.rotation.z = model.gearProgress * Math.PI / 2;
   surfaces.rightGearGroup.rotation.z = -model.gearProgress * Math.PI / 2;
 
-  // 6. Chase camera
+  // 6. Prop disc spin
+  surfaces.propDisc.rotation.z += model.throttle * 80 * frameDt;
+  surfaces.propDisc.material.alpha = model.throttle > 0.05 ? 0.12 + model.throttle * 0.08 : 0;
+
+  // 7. Wingtip vapor trails — visible during high-G maneuvers
+  const gLoad = model.airspeed > 10 ?
+    Math.abs(model.angularVelocity.x * model.airspeed + model.angularVelocity.z * model.airspeed) / 9.81 : 0;
+  const targetAlpha = gLoad > 2.0 ? Math.min(0.4, (gLoad - 2.0) * 0.15) : 0;
+  trailMat.alpha += (targetAlpha - trailMat.alpha) * 3.0 * frameDt;
+
+  // 8. Cloud layer follows camera
+  cloudPlane.position.x = chaseCamera.camera.position.x;
+  cloudPlane.position.z = chaseCamera.camera.position.z;
+
+  // 9. Chase camera
   chaseCamera.update(aircraftMesh, frameDt);
 
-  // 7. HUD
+  // 10. HUD
   updateHUD(model);
 
-  // 8. Render
+  // 11. Render
   scene.render();
 });
 
