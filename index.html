@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 6</title>
+<title>Flight Sim — Phase 7</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -629,6 +629,26 @@
   .state-badge.gnd { background: #553300; color: #ffaa00; }
   .state-badge.air { background: #003355; color: #00aaff; }
 
+  /* Gear Indicator */
+  #hud-gear {
+    position: absolute;
+    bottom: 80px;
+    right: 40px;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #00ff00;
+  }
+  /* Auto-Level Indicator */
+  #hud-autolevel {
+    position: absolute;
+    bottom: 56px;
+    right: 40px;
+    font-size: 13px;
+    color: #00ccff;
+    letter-spacing: 1px;
+  }
+
   #controls {
     position: fixed;
     bottom: 20px;
@@ -701,6 +721,12 @@
 
   <!-- Stall Warning -->
   <div id="hud-stall">STALL</div>
+
+  <!-- Gear Indicator -->
+  <div id="hud-gear">GEAR DN</div>
+
+  <!-- Auto-Level Indicator -->
+  <div id="hud-autolevel">AUTOLVL</div>
 </div>
 
 <div id="hud">
@@ -742,7 +768,7 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; P Pause &nbsp;|&nbsp; ` Debug
 </div>
 
 <div id="crash-overlay">
@@ -932,19 +958,46 @@ function getTerrainHeight(x, z) {
 }
 
 // ============================================================
+// Aircraft Profiles — flight parameters for different aircraft types
+// ============================================================
+const aircraftProfiles = {
+  trainer: {
+    name: "Training Aircraft",
+    mass: 1000, wingArea: 16, maxThrust: 15000,
+    clSlope: 5.5, stallAngle: 15,
+    pitchAuthority: 0.6, rollAuthority: 2.0, yawAuthority: 0.4,
+    pitchDamping: 3.0, rollDamping: 3.0, yawDamping: 2.5,
+    pitchStability: 0.5, dihedralStrength: 1.5, weathervaneStrength: 1.5,
+    trimAoA: 2, autoLevel: true, autoLevelStrength: 1.0,
+    gearDragPenalty: 0.3,
+  },
+  fighter: {
+    name: "Fighter Aircraft",
+    mass: 900, wingArea: 14, maxThrust: 20000,
+    clSlope: 5.0, stallAngle: 18,
+    pitchAuthority: 1.0, rollAuthority: 3.5, yawAuthority: 0.6,
+    pitchDamping: 2.0, rollDamping: 2.0, yawDamping: 1.8,
+    pitchStability: 0.3, dihedralStrength: 0.8, weathervaneStrength: 1.0,
+    trimAoA: 1, autoLevel: false, autoLevelStrength: 0.5,
+    gearDragPenalty: 0.25,
+  },
+};
+let activeProfile = aircraftProfiles.trainer;
+
+// ============================================================
 // FlightModel — core physics
 // ============================================================
 class FlightModel {
   constructor() {
-    // --- Aircraft constants ---
-    this.mass = 1000;             // kg — light aircraft
-    this.maxThrust = 5000;        // N — light prop aircraft (~30% throttle = level at 70 m/s)
-    this.wingArea = 16;           // m² — wing reference area
+    // --- Aircraft constants (from active profile) ---
+    this.mass = activeProfile.mass;
+    this.maxThrust = activeProfile.maxThrust;
+    this.wingArea = activeProfile.wingArea;
     this.airDensity = 1.225;      // kg/m³ — sea level ISA
 
     // Lift
-    this.clSlope = 5.5;           // CL per radian — typical for small wings (2π ≈ 6.28 theoretical)
-    this.stallAngle = 15 * Math.PI / 180; // ~15° stall angle
+    this.clSlope = activeProfile.clSlope;
+    this.stallAngle = activeProfile.stallAngle * Math.PI / 180;
     this.postStallFactor = 0.4;   // CL multiplier after stall (lift drops to 40%)
 
     // Drag
@@ -953,20 +1006,20 @@ class FlightModel {
     this.cdStall = 0.15;          // extra drag added during stall
 
     // Control authority — torque per unit input per unit dynamic pressure
-    this.pitchAuthority = 0.6;    // pitch torque sensitivity (~10°/s at cruise speed)
-    this.rollAuthority = 2.0;     // roll torque sensitivity
-    this.yawAuthority = 0.4;      // yaw torque sensitivity
+    this.pitchAuthority = activeProfile.pitchAuthority;
+    this.rollAuthority = activeProfile.rollAuthority;
+    this.yawAuthority = activeProfile.yawAuthority;
 
     // Damping — angular velocity decay rate (1/s), higher = more stable
-    this.pitchDamping = 3.0;
-    this.rollDamping = 3.0;
-    this.yawDamping = 2.5;
+    this.pitchDamping = activeProfile.pitchDamping;
+    this.rollDamping = activeProfile.rollDamping;
+    this.yawDamping = activeProfile.yawDamping;
 
     // Stability
-    this.trimAoA = 2 * Math.PI / 180; // 2° — AoA for hands-off level flight
-    this.pitchStability = 0.5;    // restoring torque toward trimAoA (not zero)
-    this.weathervaneStrength = 1.5; // yaw correction from sideslip
-    this.dihedralStrength = 1.5;  // restoring roll from bank angle (dihedral effect)
+    this.trimAoA = activeProfile.trimAoA * Math.PI / 180;
+    this.pitchStability = activeProfile.pitchStability;
+    this.weathervaneStrength = activeProfile.weathervaneStrength;
+    this.dihedralStrength = activeProfile.dihedralStrength;
     this.sideslipForce = 500;     // lateral force resisting sideslip (N per m/s)
 
     // Ground physics
@@ -999,6 +1052,13 @@ class FlightModel {
 
     this.onGround = true;
     this.crashed = false;
+
+    // Landing gear state
+    this.gearDown = true;
+    this.gearProgress = 0;  // 0 = deployed, 1 = retracted
+
+    // Auto-level
+    this.autoLevel = activeProfile.autoLevel;
 
     // Inputs (set externally each frame)
     this.pitchInput = 0;   // -1 to 1
@@ -1157,6 +1217,8 @@ class FlightModel {
       const cdInduced = this.cdInducedK * cl * cl;
       let cd = this.cd0 + cdInduced;
       if (this.isStalling) cd += this.cdStall;
+      // Gear drag penalty — deployed gear adds parasitic drag
+      if (this.gearProgress < 1) cd += activeProfile.gearDragPenalty * (1 - this.gearProgress);
       const dragMag = cd * qS;
       const dragDir = this.velocity.normalize().scale(-1);
       totalForce = totalForce.add(dragDir.scale(dragMag));
@@ -1191,7 +1253,16 @@ class FlightModel {
 
     const worldUp = new Vec3(0, 1, 0);
     const bankDot = right.dot(worldUp);
-    const dihedralTorque = -bankDot * this.dihedralStrength * authorityScale;
+    let dihedralTorque = -bankDot * this.dihedralStrength * authorityScale;
+
+    // Auto-level: when enabled and no pitch/roll input, strengthen stability torques
+    if (this.autoLevel && Math.abs(this.pitchInput) < 0.05 && Math.abs(this.rollInput) < 0.05) {
+      const alStr = activeProfile.autoLevelStrength;
+      dihedralTorque *= (1 + alStr);
+      // Extra pitch stability toward trimAoA
+      const extraPitchStab = -(this.aoa - this.trimAoA) * this.pitchStability * alStr * authorityScale;
+      this.angularVelocity.x += extraPitchStab * dt;
+    }
 
     this.angularVelocity.x += (pitchTorque + pitchStab) * dt;
     this.angularVelocity.y += yawTorque * dt;
@@ -1234,12 +1305,21 @@ class FlightModel {
       const pitchDeg = Math.asin(Math.max(-1, Math.min(1, fwd.y))) * 180 / Math.PI;
       const rollDeg = Math.atan2(-rt.dot(new Vec3(0, 1, 0)), u.dot(new Vec3(0, 1, 0))) * 180 / Math.PI;
 
-      if (descentRate < 3 && Math.abs(pitchDeg) < 15 && Math.abs(rollDeg) < 30) {
+      // Gear-up landing is always a crash
+      if (this.gearProgress > 0.5) {
+        this.crashed = true;
+        this.position.y = this.groundHeight;
+        this.velocity.set(0, 0, 0);
+        this.angularVelocity.set(0, 0, 0);
+      } else if (descentRate < 3 && Math.abs(pitchDeg) < 15 && Math.abs(rollDeg) < 30) {
         // Safe landing
         this.onGround = true;
         this.position.y = this.groundHeight;
         this.velocity.y = 0;
         this.angularVelocity.set(0, 0, 0);
+        // Force gear deployed on ground
+        this.gearDown = true;
+        this.gearProgress = 0;
         // Rebuild orientation from yaw only (level the aircraft, preserve heading)
         const yaw = Math.atan2(fwd.x, -fwd.z);
         this.orientation = Quat.fromAxisAngle(new Vec3(0, 1, 0), yaw);
@@ -1485,6 +1565,8 @@ function initFlightHUD() {
     headingTape: document.getElementById('heading-tape'),
     speedTape: document.getElementById('speed-tape'),
     altTape: document.getElementById('alt-tape'),
+    gearIndicator: document.getElementById('hud-gear'),
+    autoLevelIndicator: document.getElementById('hud-autolevel'),
   };
 }
 
@@ -1688,6 +1770,21 @@ function updateHUD(model) {
     dom.hudState.style.color = '#00aaff';
   }
 
+  // === Gear Indicator ===
+  if (model.gearProgress === 0) {
+    dom.gearIndicator.textContent = 'GEAR DN';
+    dom.gearIndicator.style.color = '#00ff00';
+  } else if (model.gearProgress === 1) {
+    dom.gearIndicator.textContent = 'GEAR UP';
+    dom.gearIndicator.style.color = '#666666';
+  } else {
+    dom.gearIndicator.textContent = model.gearDown ? 'GEAR DN' : 'GEAR UP';
+    dom.gearIndicator.style.color = '#ffaa00'; // amber during transit
+  }
+
+  // === Auto-Level Indicator ===
+  dom.autoLevelIndicator.style.display = model.autoLevel ? '' : 'none';
+
   // Crash overlay
   const crashOverlay = document.getElementById('crash-overlay');
   crashOverlay.className = model.crashed ? 'visible' : '';
@@ -1705,6 +1802,12 @@ function createScene(engine) {
 
   // Clear color (sky blue)
   scene.clearColor = new BABYLON.Color4(0.53, 0.72, 0.88, 1);
+
+  // PBR environment texture for reflections
+  scene.environmentTexture = BABYLON.CubeTexture.CreateFromPrefilteredData(
+    "https://assets.babylonjs.com/environments/environmentSpecular.env", scene
+  );
+  scene.environmentIntensity = 0.7;
 
   // Lights
   const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
@@ -1846,75 +1949,250 @@ function createScene(engine) {
 }
 
 // ============================================================
-// Aircraft Mesh — built from primitives
+// Aircraft Mesh — detailed procedural aircraft with control surfaces
 // ============================================================
 function createAircraftMesh(scene) {
   const root = new BABYLON.TransformNode('aircraft', scene);
 
-  // Offset body up so fuselage bottom sits at ground level (radius 0.6 + 0.1 gear clearance)
+  // Body offset: gear strut (1.0) + wheel (0.25) + clearance (0.15)
   const body = new BABYLON.TransformNode('body', scene);
   body.parent = root;
-  body.position.y = 0.7;
+  body.position.y = 1.4;
 
-  // Materials
-  const grayMat = new BABYLON.StandardMaterial('gray', scene);
-  grayMat.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.65);
+  // === PBR Materials ===
+  const fuselageMat = new BABYLON.PBRMetallicRoughnessMaterial('fuselageMat', scene);
+  fuselageMat.baseColor = BABYLON.Color3.FromHexString('#C0C8D0');
+  fuselageMat.metallic = 0.85;
+  fuselageMat.roughness = 0.3;
 
-  const darkGrayMat = new BABYLON.StandardMaterial('darkGray', scene);
-  darkGrayMat.diffuseColor = new BABYLON.Color3(0.35, 0.35, 0.4);
+  const canopyMat = new BABYLON.PBRMetallicRoughnessMaterial('canopyMat', scene);
+  canopyMat.baseColor = BABYLON.Color3.FromHexString('#88AACC');
+  canopyMat.metallic = 0.1;
+  canopyMat.roughness = 0.1;
+  canopyMat.alpha = 0.35;
 
-  const lightGrayMat = new BABYLON.StandardMaterial('lightGray', scene);
-  lightGrayMat.diffuseColor = new BABYLON.Color3(0.75, 0.75, 0.78);
+  const surfaceMat = new BABYLON.PBRMetallicRoughnessMaterial('surfaceMat', scene);
+  surfaceMat.baseColor = BABYLON.Color3.FromHexString('#B0B8C0');
+  surfaceMat.metallic = 0.8;
+  surfaceMat.roughness = 0.35;
 
-  // Fuselage — cylinder along Y, rotate 90° around X so it lies along Z
-  const fuselage = BABYLON.MeshBuilder.CreateCylinder('fuselage', {
-    diameter: 1.2, height: 8, tessellation: 12
+  const strutMat = new BABYLON.PBRMetallicRoughnessMaterial('strutMat', scene);
+  strutMat.baseColor = BABYLON.Color3.FromHexString('#404040');
+  strutMat.metallic = 0.7;
+  strutMat.roughness = 0.5;
+
+  const wheelMat = new BABYLON.PBRMetallicRoughnessMaterial('wheelMat', scene);
+  wheelMat.baseColor = BABYLON.Color3.FromHexString('#202020');
+  wheelMat.metallic = 0.0;
+  wheelMat.roughness = 0.9;
+
+  // === Fuselage — CreateTube with radiusFunction for smooth tapering ===
+  const fusePoints = 20;
+  const fuseLength = 10;
+  const fusePath = [];
+  for (let i = 0; i <= fusePoints; i++) {
+    const t = i / fusePoints;
+    fusePath.push(new BABYLON.Vector3(0, 0, -fuseLength / 2 + t * fuseLength));
+  }
+  const fuselage = BABYLON.MeshBuilder.CreateTube('fuselage', {
+    path: fusePath,
+    radiusFunction: (i) => {
+      const t = i / fusePoints;
+      // Smooth taper: wide in middle, narrow at nose/tail
+      if (t < 0.15) {
+        // Nose taper
+        const nt = t / 0.15;
+        return 0.1 + 0.5 * Math.sin(nt * Math.PI / 2);
+      } else if (t > 0.75) {
+        // Tail taper
+        const tt = (t - 0.75) / 0.25;
+        return 0.6 * (1 - tt * 0.7);
+      }
+      return 0.6;
+    },
+    tessellation: 16,
+    cap: BABYLON.Mesh.CAP_ALL,
   }, scene);
-  fuselage.rotation.x = Math.PI / 2;
-  fuselage.material = grayMat;
+  fuselage.material = fuselageMat;
   fuselage.parent = body;
 
-  // Nose cone — tapered cylinder
-  const nose = BABYLON.MeshBuilder.CreateCylinder('nose', {
-    diameterTop: 0.3, diameterBottom: 1.2, height: 1.5, tessellation: 12
-  }, scene);
-  nose.rotation.x = Math.PI / 2;
-  nose.position.z = -4.75;
-  nose.material = darkGrayMat;
-  nose.parent = body;
+  // === Canopy — hemisphere on top of forward fuselage ===
+  const canopy = BABYLON.MeshBuilder.CreateSphere('canopy', { diameter: 1.6, segments: 12 }, scene);
+  canopy.scaling = new BABYLON.Vector3(0.6, 0.5, 1.0);
+  canopy.position.set(0, 0.45, -2.0);
+  canopy.material = canopyMat;
+  canopy.parent = body;
 
-  // Wings — box
-  const wings = BABYLON.MeshBuilder.CreateBox('wings', {
-    width: 12, height: 0.15, depth: 1.8
-  }, scene);
-  wings.position.y = -0.1;
-  wings.position.z = -0.5;
-  wings.material = lightGrayMat;
-  wings.parent = body;
+  // === Wings (left + right) — CreateRibbon for tapered planform ===
+  function createWing(name, side) {
+    const sign = side === 'left' ? -1 : 1;
+    const span = 6;
+    const rootChord = 2.0;
+    const tipChord = 0.8;
+    const sweep = 0.4; // trailing edge sweep
+    const thickness = 0.08;
+    const steps = 10;
 
-  // Horizontal stabilizer
-  const hStab = BABYLON.MeshBuilder.CreateBox('hStab', {
-    width: 4, height: 0.1, depth: 0.8
-  }, scene);
-  hStab.position.y = 0.2;
-  hStab.position.z = 3.8;
-  hStab.material = lightGrayMat;
-  hStab.parent = body;
+    const topPath = [];
+    const botPath = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = sign * t * span;
+      const chord = rootChord + (tipChord - rootChord) * t;
+      const leadZ = -chord / 2 - sweep * t;
+      const midZ = leadZ + chord / 2;
+      // Airfoil-like: thicker at root, thinner at tip
+      const h = thickness * (1 - 0.5 * t);
+      topPath.push(new BABYLON.Vector3(y, h, midZ));
+      botPath.push(new BABYLON.Vector3(y, -h, midZ));
+    }
 
-  // Vertical stabilizer
+    // Build ribbon from leading edge -> top -> trailing edge -> bottom -> leading edge
+    const pathArray = [topPath, botPath];
+    const wing = BABYLON.MeshBuilder.CreateRibbon(name, {
+      pathArray: pathArray,
+      closePath: false,
+      sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, scene);
+    wing.position.set(0, -0.1, -0.5);
+    wing.material = fuselageMat;
+    wing.parent = body;
+    return wing;
+  }
+
+  const leftWing = createWing('leftWing', 'left');
+  const rightWing = createWing('rightWing', 'right');
+
+  // === Ailerons — small boxes at trailing edge of outer wing ===
+  function createAileron(name, xPos) {
+    // Hinge node at leading edge of aileron
+    const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
+    hinge.position.set(xPos, -0.1, 0.1);
+    hinge.parent = body;
+    const aileron = BABYLON.MeshBuilder.CreateBox(name, {
+      width: 2.0, height: 0.06, depth: 0.4
+    }, scene);
+    // Offset so rotation appears at leading edge
+    aileron.position.set(0, 0, 0.2);
+    aileron.material = surfaceMat;
+    aileron.parent = hinge;
+    return hinge;
+  }
+
+  const leftAileron = createAileron('leftAileron', -4.5);
+  const rightAileron = createAileron('rightAileron', 4.5);
+
+  // === Horizontal Stabilizer — tapered ribbon ===
+  function createHStab(name, side) {
+    const sign = side === 'left' ? -1 : 1;
+    const span = 2.0;
+    const rootChord = 0.8;
+    const tipChord = 0.4;
+    const thickness = 0.04;
+    const steps = 6;
+
+    const topPath = [];
+    const botPath = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = sign * t * span;
+      const chord = rootChord + (tipChord - rootChord) * t;
+      const midZ = 4.2 - chord / 2;
+      const h = thickness * (1 - 0.3 * t);
+      topPath.push(new BABYLON.Vector3(y, 0.2 + h, midZ));
+      botPath.push(new BABYLON.Vector3(y, 0.2 - h, midZ));
+    }
+
+    const stab = BABYLON.MeshBuilder.CreateRibbon(name, {
+      pathArray: [topPath, botPath],
+      closePath: false,
+      sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, scene);
+    stab.material = fuselageMat;
+    stab.parent = body;
+    return stab;
+  }
+
+  createHStab('hStabLeft', 'left');
+  createHStab('hStabRight', 'right');
+
+  // === Elevator — box at trailing edge of horizontal stabilizer ===
+  const elevatorHinge = new BABYLON.TransformNode('elevatorHinge', scene);
+  elevatorHinge.position.set(0, 0.2, 4.5);
+  elevatorHinge.parent = body;
+  const elevator = BABYLON.MeshBuilder.CreateBox('elevator', {
+    width: 3.6, height: 0.05, depth: 0.35
+  }, scene);
+  elevator.position.set(0, 0, 0.175);
+  elevator.material = surfaceMat;
+  elevator.parent = elevatorHinge;
+
+  // === Vertical Stabilizer — tapered box ===
   const vStab = BABYLON.MeshBuilder.CreateBox('vStab', {
-    width: 0.1, height: 1.8, depth: 1.2
+    width: 0.08, height: 1.8, depth: 1.2
   }, scene);
-  vStab.position.y = 1.0;
-  vStab.position.z = 3.5;
-  vStab.material = lightGrayMat;
+  vStab.position.set(0, 1.1, 3.8);
+  vStab.material = fuselageMat;
   vStab.parent = body;
+
+  // === Rudder — box at trailing edge of vertical stabilizer ===
+  const rudderHinge = new BABYLON.TransformNode('rudderHinge', scene);
+  rudderHinge.position.set(0, 1.1, 4.4);
+  rudderHinge.parent = body;
+  const rudder = BABYLON.MeshBuilder.CreateBox('rudder', {
+    width: 0.06, height: 1.6, depth: 0.35
+  }, scene);
+  rudder.position.set(0, 0, 0.175);
+  rudder.material = surfaceMat;
+  rudder.parent = rudderHinge;
+
+  // === Landing Gear — 3 assemblies ===
+  function createGearAssembly(name, pos) {
+    const group = new BABYLON.TransformNode(name, scene);
+    group.position.set(pos.x, pos.y, pos.z);
+    group.parent = body;
+
+    // Strut
+    const strut = BABYLON.MeshBuilder.CreateCylinder(name + 'Strut', {
+      diameter: 0.08, height: 1.0, tessellation: 8
+    }, scene);
+    strut.position.y = -0.5;
+    strut.material = strutMat;
+    strut.parent = group;
+
+    // Wheel
+    const wheel = BABYLON.MeshBuilder.CreateCylinder(name + 'Wheel', {
+      diameter: 0.4, height: 0.15, tessellation: 12
+    }, scene);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.y = -1.0;
+    wheel.material = wheelMat;
+    wheel.parent = group;
+
+    return group;
+  }
+
+  const noseGearGroup = createGearAssembly('noseGear', { x: 0, y: -0.3, z: -3.0 });
+  const leftGearGroup = createGearAssembly('leftGear', { x: -1.5, y: -0.3, z: 0 });
+  const rightGearGroup = createGearAssembly('rightGear', { x: 1.5, y: -0.3, z: 0 });
 
   // Render aircraft on top of terrain (same group as runway)
   root.getChildMeshes().forEach(m => m.renderingGroupId = 1);
 
   root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
-  return root;
+
+  return {
+    root,
+    surfaces: {
+      leftAileron,
+      rightAileron,
+      elevator: elevatorHinge,
+      rudder: rudderHinge,
+      noseGearGroup,
+      leftGearGroup,
+      rightGearGroup,
+    }
+  };
 }
 
 // ============================================================
@@ -1984,7 +2262,7 @@ const input = new InputHandler();
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
 const scene = createScene(engine);
-const aircraftMesh = createAircraftMesh(scene);
+const { root: aircraftMesh, surfaces } = createAircraftMesh(scene);
 const chaseCamera = new ChaseCamera(scene);
 scene.activeCamera = chaseCamera.camera;
 
@@ -2006,6 +2284,15 @@ function restart() {
   // Reset camera smoothing
   chaseCamera.smoothedPosition = null;
   chaseCamera.smoothedTarget = null;
+  // Reset gear mesh rotations
+  surfaces.noseGearGroup.rotation.x = 0;
+  surfaces.leftGearGroup.rotation.z = 0;
+  surfaces.rightGearGroup.rotation.z = 0;
+  // Reset control surfaces
+  surfaces.leftAileron.rotation.x = 0;
+  surfaces.rightAileron.rotation.x = 0;
+  surfaces.elevator.rotation.x = 0;
+  surfaces.rudder.rotation.y = 0;
 }
 
 let paused = false;
@@ -2028,6 +2315,14 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Backquote') {
     debugPanelVisible = !debugPanelVisible;
     document.getElementById('hud').className = debugPanelVisible ? 'visible' : '';
+  }
+  // Toggle landing gear (only when airborne)
+  if (e.code === 'KeyG' && !model.crashed && !model.onGround) {
+    model.gearDown = !model.gearDown;
+  }
+  // Toggle auto-level
+  if (e.code === 'KeyL' && !model.crashed) {
+    model.autoLevel = !model.autoLevel;
   }
 });
 
@@ -2090,13 +2385,34 @@ engine.runRenderLoop(() => {
     s0 * po.w + s1 * co.w
   );
 
-  // 4. Chase camera
+  // 4. Control surface deflection
+  const AILERON_MAX = 15 * Math.PI / 180;
+  const ELEVATOR_MAX = 20 * Math.PI / 180;
+  const RUDDER_MAX = 20 * Math.PI / 180;
+
+  surfaces.rightAileron.rotation.x = -input.smoothRoll * AILERON_MAX;
+  surfaces.leftAileron.rotation.x = input.smoothRoll * AILERON_MAX;
+  surfaces.elevator.rotation.x = input.smoothPitch * ELEVATOR_MAX;
+  surfaces.rudder.rotation.y = input.smoothYaw * RUDDER_MAX;
+
+  // 5. Landing gear animation
+  const GEAR_ANIM_SPEED = 0.5; // full travel in 2 seconds
+  if (model.gearDown && model.gearProgress > 0) {
+    model.gearProgress = Math.max(0, model.gearProgress - GEAR_ANIM_SPEED * frameDt);
+  } else if (!model.gearDown && model.gearProgress < 1) {
+    model.gearProgress = Math.min(1, model.gearProgress + GEAR_ANIM_SPEED * frameDt);
+  }
+  surfaces.noseGearGroup.rotation.x = model.gearProgress * Math.PI / 2;
+  surfaces.leftGearGroup.rotation.z = model.gearProgress * Math.PI / 2;
+  surfaces.rightGearGroup.rotation.z = -model.gearProgress * Math.PI / 2;
+
+  // 6. Chase camera
   chaseCamera.update(aircraftMesh, frameDt);
 
-  // 5. HUD (unchanged)
+  // 7. HUD
   updateHUD(model);
 
-  // 6. Render
+  // 8. Render
   scene.render();
 });
 
