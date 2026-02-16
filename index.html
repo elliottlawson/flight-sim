@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 3</title>
+<title>Flight Sim — Phase 4</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -172,6 +172,69 @@
     color: #0a0;
     letter-spacing: 1px;
   }
+  /* Crash overlay */
+  #crash-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 20;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+  }
+  #crash-overlay.visible { display: flex; }
+  #crash-overlay .crash-title {
+    font-size: 64px;
+    font-weight: bold;
+    color: #f00;
+    text-shadow: 0 0 20px rgba(255, 0, 0, 0.6);
+    margin-bottom: 20px;
+  }
+  #crash-overlay .crash-subtitle {
+    font-size: 20px;
+    color: #ccc;
+  }
+
+  /* Pause overlay */
+  #pause-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 20;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+  }
+  #pause-overlay.visible { display: flex; }
+  #pause-overlay .pause-title {
+    font-size: 48px;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  #pause-overlay .pause-subtitle {
+    font-size: 18px;
+    color: #aaa;
+  }
+
+  /* Ground state indicator */
+  .state-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  .state-badge.gnd { background: #553300; color: #ffaa00; }
+  .state-badge.air { background: #003355; color: #00aaff; }
+
   #controls {
     position: fixed;
     bottom: 20px;
@@ -197,6 +260,7 @@
   <div class="row"><span class="label">Pitch</span><span class="value" id="pitch">0°</span></div>
   <div class="row"><span class="label">Roll</span><span class="value" id="roll">0°</span></div>
   <div class="row"><span class="label">Heading</span><span class="value" id="hdg">0°</span></div>
+  <div class="row"><span class="label">State</span><span class="value" id="flight-state"><span class="state-badge gnd">GND</span></span></div>
 
   <div id="hud-instruments">
     <div id="horizon-container">
@@ -226,7 +290,17 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; P Pause
+</div>
+
+<div id="crash-overlay">
+  <div class="crash-title">CRASHED</div>
+  <div class="crash-subtitle">Press R to restart</div>
+</div>
+
+<div id="pause-overlay">
+  <div class="pause-title">PAUSED</div>
+  <div class="pause-subtitle">Press P to resume</div>
 </div>
 
 <script>
@@ -351,23 +425,30 @@ class FlightModel {
     this.dihedralStrength = 1.5;  // restoring roll from bank angle (dihedral effect)
     this.sideslipForce = 500;     // lateral force resisting sideslip (N per m/s)
 
+    // Ground physics
+    this.groundFriction = 0.03;     // rolling friction coefficient (tires on asphalt)
+    this.takeoffSpeed = 60;         // m/s — minimum speed for takeoff
+    this.noseWheelSteer = 0.8;      // yaw rate on ground (rad/s at full input)
+
     // --- State ---
-    this.position = new Vec3(0, 100, 0);        // start at 100m altitude
-    this.velocity = new Vec3(0, 0, -70);        // 70 m/s forward (negative Z = forward)
-    // Start with ~2° nose-up pitch so there's lift from frame 1
-    const initPitch = 2 * Math.PI / 180;
-    this.orientation = Quat.fromAxisAngle(new Vec3(1, 0, 0), initPitch);
-    this.angularVelocity = new Vec3(0, 0, 0);   // rad/s in body frame (x=pitch, y=yaw, z=roll)
+    this.reset();
+  }
 
-    // Throttle persists between frames (set by W/S)
-    this.throttle = 0.5;
+  reset() {
+    this.position = new Vec3(0, 0, 0);          // on the runway
+    this.velocity = new Vec3(0, 0, 0);          // stationary
+    this.orientation = new Quat(0, 0, 0, 1);   // identity — level, facing -Z
+    this.angularVelocity = new Vec3(0, 0, 0);   // rad/s in body frame
 
-    // Derived (updated each step)
-    this.airspeed = 70;
-    this.altitude = 100;
+    this.throttle = 0;
+    this.airspeed = 0;
+    this.altitude = 0;
     this.verticalSpeed = 0;
     this.aoa = 0;
     this.isStalling = false;
+
+    this.onGround = true;
+    this.crashed = false;
 
     // Inputs (set externally each frame)
     this.pitchInput = 0;   // -1 to 1
@@ -381,18 +462,104 @@ class FlightModel {
   getRight()   { return this.orientation.rotateVec(new Vec3(1, 0, 0)); }
 
   stepPhysics(dt) {
+    if (this.crashed) return;
+
     const forward = this.getForward();
     const up = this.getUp();
     const right = this.getRight();
 
     // --- Airspeed & dynamic pressure ---
     this.airspeed = this.velocity.length();
-    const dynamicPressure = 0.5 * this.airDensity * this.airspeed * this.airspeed; // q = ½ρv²
-    const qS = dynamicPressure * this.wingArea; // q * S — used for force coefficients
+    const dynamicPressure = 0.5 * this.airDensity * this.airspeed * this.airspeed;
+    const qS = dynamicPressure * this.wingArea;
+
+    // =============================================
+    // GROUND MODE
+    // =============================================
+    if (this.onGround) {
+      // Thrust along forward axis (taxi)
+      const thrustMag = this.throttle * this.maxThrust;
+      let totalForce = forward.scale(thrustMag);
+
+      // Aerodynamic drag (still applies on ground)
+      if (this.airspeed > 0.5) {
+        const cd = this.cd0;
+        const dragMag = cd * qS;
+        const dragDir = this.velocity.normalize().scale(-1);
+        totalForce = totalForce.add(dragDir.scale(dragMag));
+      }
+
+      // Ground friction — constant force opposing motion (rolling friction = μ * weight)
+      if (this.airspeed > 0.1) {
+        const frictionMag = this.groundFriction * this.mass * 9.81;
+        const frictionForce = this.velocity.normalize().scale(-frictionMag);
+        totalForce = totalForce.add(frictionForce);
+      }
+
+      // Acceleration
+      const accel = totalForce.scale(1 / this.mass);
+      this.velocity = this.velocity.add(accel.scale(dt));
+
+      // Nose wheel steering — yaw proportional to input and speed
+      if (this.airspeed > 0.5) {
+        const steerRate = this.yawInput * this.noseWheelSteer;
+        // Scale steering down at high speed for realism
+        const speedFactor = Math.min(1, 10 / this.airspeed);
+        const yawAngle = steerRate * speedFactor * dt;
+        const yawQ = Quat.fromAxisAngle(new Vec3(0, 1, 0), yawAngle);
+        this.orientation = yawQ.multiply(this.orientation).normalize();
+        // Also rotate velocity to follow heading
+        this.velocity = yawQ.rotateVec(this.velocity);
+      }
+
+      // Constrain orientation — force level (no roll, no pitch)
+      // Rebuild quaternion from yaw only
+      const fwd = this.getForward();
+      const yaw = Math.atan2(fwd.x, -fwd.z);
+      this.orientation = Quat.fromAxisAngle(new Vec3(0, 1, 0), yaw);
+
+      // Kill angular velocity on ground
+      this.angularVelocity.set(0, 0, 0);
+
+      // Clamp to ground
+      this.position.y = 0;
+      this.velocity.y = 0;
+
+      // Update position
+      this.position = this.position.add(this.velocity.scale(dt));
+      this.position.y = 0; // enforce after position update
+
+      // Stop completely at very low speed with no throttle
+      if (this.airspeed < 0.5 && this.throttle < 0.01) {
+        this.velocity.set(0, 0, 0);
+      }
+
+      // Takeoff condition: speed > threshold AND pulling back on stick
+      if (this.airspeed > this.takeoffSpeed && this.pitchInput > 0) {
+        this.onGround = false;
+        // Give slight upward pitch to generate lift
+        const fwd2 = this.getForward();
+        const yaw2 = Math.atan2(fwd2.x, -fwd2.z);
+        const pitchUp = 5 * Math.PI / 180; // 5° nose up on takeoff
+        this.orientation = Quat.fromAxisAngle(new Vec3(0, 1, 0), yaw2)
+          .multiply(Quat.fromAxisAngle(new Vec3(1, 0, 0), pitchUp));
+      }
+
+      // AoA is zero on ground
+      this.aoa = 0;
+      this.isStalling = false;
+
+      // Update derived values
+      this.altitude = 0;
+      this.verticalSpeed = 0;
+      return;
+    }
+
+    // =============================================
+    // FLIGHT MODE (existing physics)
+    // =============================================
 
     // --- Angle of Attack ---
-    // AoA = angle between velocity and aircraft forward axis
-    // Using atan2(-upDot, forwardDot) — forwardDot must NOT be negated
     if (this.airspeed > 0.5) {
       const velNorm = this.velocity.normalize();
       const forwardDot = velNorm.dot(forward);
@@ -402,14 +569,13 @@ class FlightModel {
       this.aoa = 0;
     }
 
-    // --- Unified CL (used for both lift and induced drag) ---
+    // --- Unified CL ---
     let cl;
     const absAoa = Math.abs(this.aoa);
     if (absAoa < this.stallAngle) {
-      cl = this.clSlope * this.aoa; // linear region
+      cl = this.clSlope * this.aoa;
       this.isStalling = false;
     } else {
-      // Post-stall: CL drops
       cl = this.clSlope * Math.sign(this.aoa) * this.stallAngle * this.postStallFactor;
       this.isStalling = true;
     }
@@ -417,27 +583,23 @@ class FlightModel {
     // --- Forces ---
     let totalForce = new Vec3(0, 0, 0);
 
-    // 1. Gravity (world down)
+    // 1. Gravity
     totalForce = totalForce.add(new Vec3(0, -9.81 * this.mass, 0));
 
-    // 2. Thrust (along aircraft forward)
+    // 2. Thrust
     const thrustMag = this.throttle * this.maxThrust;
     totalForce = totalForce.add(forward.scale(thrustMag));
 
-    // 3. Lift (perpendicular to velocity, in the plane of forward+up)
+    // 3. Lift
     if (this.airspeed > 1) {
       const liftMag = cl * qS;
-      // Lift direction: perpendicular to velocity in the forward-up plane
-      // liftDir = normalize(up - (up·velDir)*velDir) approximately, but more robust:
-      // Use cross products: liftDir = normalize(velocity × right) — gives "aerodynamic up"
       const velDir = this.velocity.normalize();
       let liftDir = velDir.cross(right).normalize();
-      // Make sure lift points generally upward relative to aircraft
       if (liftDir.dot(up) < 0) liftDir = liftDir.scale(-1);
       totalForce = totalForce.add(liftDir.scale(liftMag));
     }
 
-    // 4. Drag (opposes velocity)
+    // 4. Drag
     if (this.airspeed > 0.5) {
       const cdInduced = this.cdInducedK * cl * cl;
       let cd = this.cd0 + cdInduced;
@@ -447,10 +609,10 @@ class FlightModel {
       totalForce = totalForce.add(dragDir.scale(dragMag));
     }
 
-    // 5. Sideslip force — resists lateral airflow across fuselage
+    // 5. Sideslip force
     if (this.airspeed > 1) {
       const velDir = this.velocity.normalize();
-      const sideslip = velDir.dot(right); // how much velocity is sideways
+      const sideslip = velDir.dot(right);
       const sideslipForce = right.scale(-sideslip * this.sideslipForce * this.airspeed);
       totalForce = totalForce.add(sideslipForce);
     }
@@ -459,52 +621,39 @@ class FlightModel {
     const accel = totalForce.scale(1 / this.mass);
     this.velocity = this.velocity.add(accel.scale(dt));
 
-    // --- Torques (in body-local frame) ---
-    // Control authority scales with dynamic pressure (more authority at higher speed)
-    const authorityScale = Math.min(dynamicPressure / 3000, 1.5); // normalized, capped
+    // --- Torques ---
+    const authorityScale = Math.min(dynamicPressure / 3000, 1.5);
 
-    // Control torques
-    // Body-frame right-hand rule: +wx=nose up, +wy=nose left, +wz=left bank
-    // Negate roll and yaw so ArrowRight=right bank and KeyD=yaw right
     const pitchTorque = this.pitchInput * this.pitchAuthority * authorityScale;
     const rollTorque = -this.rollInput * this.rollAuthority * authorityScale;
     let yawTorque = -this.yawInput * this.yawAuthority * authorityScale;
 
-    // Pitch stability — restores toward trimAoA (not zero, so lift is maintained)
     const pitchStab = -(this.aoa - this.trimAoA) * this.pitchStability * authorityScale;
 
-    // Weathervane — yaw correction from sideslip (vertical stabilizer effect)
     if (this.airspeed > 1) {
       const velDir = this.velocity.normalize();
       const sideslip = Math.asin(Math.max(-1, Math.min(1, velDir.dot(right))));
       yawTorque += -sideslip * this.weathervaneStrength * authorityScale;
     }
 
-    // Dihedral effect — gravity projection onto right axis creates restoring roll
     const worldUp = new Vec3(0, 1, 0);
-    const bankDot = right.dot(worldUp); // negative when right wing down
+    const bankDot = right.dot(worldUp);
     const dihedralTorque = -bankDot * this.dihedralStrength * authorityScale;
 
-    // Apply torques to angular velocity
     this.angularVelocity.x += (pitchTorque + pitchStab) * dt;
     this.angularVelocity.y += yawTorque * dt;
     this.angularVelocity.z += (rollTorque + dihedralTorque) * dt;
 
-    // Angular damping — decays angular velocity when no input
     this.angularVelocity.x *= Math.exp(-this.pitchDamping * dt);
     this.angularVelocity.y *= Math.exp(-this.yawDamping * dt);
     this.angularVelocity.z *= Math.exp(-this.rollDamping * dt);
 
-    // Clamp angular velocity (prevent wild spinning)
-    const maxAngVel = 3.0; // rad/s
+    const maxAngVel = 3.0;
     this.angularVelocity.x = Math.max(-maxAngVel, Math.min(maxAngVel, this.angularVelocity.x));
     this.angularVelocity.y = Math.max(-maxAngVel, Math.min(maxAngVel, this.angularVelocity.y));
     this.angularVelocity.z = Math.max(-maxAngVel, Math.min(maxAngVel, this.angularVelocity.z));
 
-    // --- Apply rotation (quaternion derivative from body-frame angular velocity) ---
-    // q_dot = 0.5 * q * omega_body, where omega_body is a pure quaternion
-    // Body axes: +X=right, +Y=up, +Z=backward
-    // Right-hand: +wx=nose up, +wy=nose left, +wz=left bank
+    // --- Apply rotation ---
     const omega = new Quat(
       this.angularVelocity.x,
       this.angularVelocity.y,
@@ -522,16 +671,35 @@ class FlightModel {
     // --- Update position ---
     this.position = this.position.add(this.velocity.scale(dt));
 
-    // --- Ground clamp ---
-    if (this.position.y < 0) {
-      this.position.y = 0;
-      if (this.velocity.y < 0) this.velocity.y = 0;
-      // Kill angular velocity on ground contact
-      this.angularVelocity.set(0, 0, 0);
+    // --- Landing / Crash Detection ---
+    if (this.position.y <= 0) {
+      const descentRate = -this.velocity.y; // positive = descending
+      const fwd = this.getForward();
+      const rt = this.getRight();
+      const u = this.getUp();
+      const pitchDeg = Math.asin(Math.max(-1, Math.min(1, fwd.y))) * 180 / Math.PI;
+      const rollDeg = Math.atan2(-rt.dot(new Vec3(0, 1, 0)), u.dot(new Vec3(0, 1, 0))) * 180 / Math.PI;
+
+      if (descentRate < 3 && Math.abs(pitchDeg) < 15 && Math.abs(rollDeg) < 30) {
+        // Safe landing
+        this.onGround = true;
+        this.position.y = 0;
+        this.velocity.y = 0;
+        this.angularVelocity.set(0, 0, 0);
+        // Rebuild orientation from yaw only (level the aircraft, preserve heading)
+        const yaw = Math.atan2(fwd.x, -fwd.z);
+        this.orientation = Quat.fromAxisAngle(new Vec3(0, 1, 0), yaw);
+      } else {
+        // Crash
+        this.crashed = true;
+        this.position.y = 0;
+        this.velocity.set(0, 0, 0);
+        this.angularVelocity.set(0, 0, 0);
+      }
     }
 
-    // --- Velocity clamp (prevent runaway) ---
-    const maxSpeed = 300; // m/s
+    // --- Velocity clamp ---
+    const maxSpeed = 300;
     if (this.airspeed > maxSpeed) {
       this.velocity = this.velocity.normalize().scale(maxSpeed);
     }
@@ -637,6 +805,20 @@ function updateHUD(model) {
 
   const stallEl = document.getElementById('stall');
   stallEl.className = model.isStalling ? 'stall active' : 'stall';
+
+  // Flight state badge
+  const stateEl = document.getElementById('flight-state');
+  if (model.crashed) {
+    stateEl.innerHTML = '<span class="state-badge" style="background:#550000;color:#ff4444;">CRASH</span>';
+  } else if (model.onGround) {
+    stateEl.innerHTML = '<span class="state-badge gnd">GND</span>';
+  } else {
+    stateEl.innerHTML = '<span class="state-badge air">AIR</span>';
+  }
+
+  // Crash overlay
+  const crashOverlay = document.getElementById('crash-overlay');
+  crashOverlay.className = model.crashed ? 'visible' : '';
 }
 
 // ============================================================
@@ -666,6 +848,38 @@ function createScene(engine) {
   gridMat.lineColor = new BABYLON.Color3(0.35, 0.55, 0.3);
   gridMat.backFaceCulling = false;
   ground.material = gridMat;
+
+  // Runway — 30m wide, 800m long, along -Z axis
+  const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 30, height: 800 }, scene);
+  runway.position.y = 0.01; // slightly above ground to prevent z-fighting
+  runway.position.z = -400; // centered so aircraft starts at near end
+
+  // Runway material with center dashed line via DynamicTexture
+  const runwayMat = new BABYLON.StandardMaterial('runwayMat', scene);
+  const runwayTex = new BABYLON.DynamicTexture('runwayTex', { width: 128, height: 2048 }, scene);
+  const rctx = runwayTex.getContext();
+  // Dark gray asphalt
+  rctx.fillStyle = '#333338';
+  rctx.fillRect(0, 0, 128, 2048);
+  // White edge lines
+  rctx.fillStyle = '#cccccc';
+  rctx.fillRect(4, 0, 3, 2048);     // left edge
+  rctx.fillRect(121, 0, 3, 2048);   // right edge
+  // Center dashed line
+  rctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 2048; i += 64) {
+    rctx.fillRect(62, i, 4, 40);    // 40px dash, 24px gap
+  }
+  // Threshold markings at start
+  rctx.fillStyle = '#ffffff';
+  for (let s = 0; s < 8; s++) {
+    const sx = 16 + s * 12;
+    rctx.fillRect(sx, 1980, 8, 60);
+  }
+  runwayTex.update();
+  runwayMat.diffuseTexture = runwayTex;
+  runwayMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+  runway.material = runwayMat;
 
   // Sky sphere
   const sky = BABYLON.MeshBuilder.CreateSphere('sky', { diameter: 9000, segments: 16 }, scene);
@@ -703,6 +917,11 @@ function createScene(engine) {
 function createAircraftMesh(scene) {
   const root = new BABYLON.TransformNode('aircraft', scene);
 
+  // Offset body up so fuselage bottom sits at ground level (radius 0.6 + 0.1 gear clearance)
+  const body = new BABYLON.TransformNode('body', scene);
+  body.parent = root;
+  body.position.y = 0.7;
+
   // Materials
   const grayMat = new BABYLON.StandardMaterial('gray', scene);
   grayMat.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.65);
@@ -719,7 +938,7 @@ function createAircraftMesh(scene) {
   }, scene);
   fuselage.rotation.x = Math.PI / 2;
   fuselage.material = grayMat;
-  fuselage.parent = root;
+  fuselage.parent = body;
 
   // Nose cone — tapered cylinder
   const nose = BABYLON.MeshBuilder.CreateCylinder('nose', {
@@ -728,7 +947,7 @@ function createAircraftMesh(scene) {
   nose.rotation.x = Math.PI / 2;
   nose.position.z = -4.75;
   nose.material = darkGrayMat;
-  nose.parent = root;
+  nose.parent = body;
 
   // Wings — box
   const wings = BABYLON.MeshBuilder.CreateBox('wings', {
@@ -737,7 +956,7 @@ function createAircraftMesh(scene) {
   wings.position.y = -0.1;
   wings.position.z = -0.5;
   wings.material = lightGrayMat;
-  wings.parent = root;
+  wings.parent = body;
 
   // Horizontal stabilizer
   const hStab = BABYLON.MeshBuilder.CreateBox('hStab', {
@@ -746,7 +965,7 @@ function createAircraftMesh(scene) {
   hStab.position.y = 0.2;
   hStab.position.z = 3.8;
   hStab.material = lightGrayMat;
-  hStab.parent = root;
+  hStab.parent = body;
 
   // Vertical stabilizer
   const vStab = BABYLON.MeshBuilder.CreateBox('vStab', {
@@ -755,7 +974,7 @@ function createAircraftMesh(scene) {
   vStab.position.y = 1.0;
   vStab.position.z = 3.5;
   vStab.material = lightGrayMat;
-  vStab.parent = root;
+  vStab.parent = body;
 
   root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
   return root;
@@ -837,7 +1056,38 @@ let accumulator = 0;
 let prevPosition = new Vec3(model.position.x, model.position.y, model.position.z);
 let prevOrientation = model.orientation.clone();
 
+// Restart function
+function restart() {
+  model.reset();
+  accumulator = 0;
+  lastTime = null;
+  prevPosition.set(0, 0, 0);
+  prevOrientation = new Quat(0, 0, 0, 1);
+  // Reset camera smoothing
+  chaseCamera.smoothedPosition = null;
+  chaseCamera.smoothedTarget = null;
+}
+
+let paused = false;
+
+// Listen for R key to restart after crash, P/Escape to toggle pause
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyR' && model.crashed) {
+    restart();
+    paused = false;
+  }
+  if (e.code === 'KeyP' || e.code === 'Escape') {
+    if (!model.crashed) {
+      paused = !paused;
+      if (!paused) lastTime = null; // reset dt so no huge jump after unpause
+    }
+  }
+});
+
 engine.runRenderLoop(() => {
+  // Pause overlay
+  document.getElementById('pause-overlay').className = paused ? 'visible' : '';
+
   const now = performance.now();
   if (lastTime === null) { lastTime = now; return; }
 
@@ -846,8 +1096,13 @@ engine.runRenderLoop(() => {
 
   if (frameDt > MAX_FRAME_DT) frameDt = MAX_FRAME_DT;
 
-  // 1. Input (unchanged)
-  input.update(frameDt, model);
+  // When paused, still render but skip physics and input
+  if (paused) { scene.render(); return; }
+
+  // 1. Input — skip when crashed
+  if (!model.crashed) {
+    input.update(frameDt, model);
+  }
 
   // 2. Fixed timestep physics with state snapshots for interpolation
   accumulator += frameDt;
