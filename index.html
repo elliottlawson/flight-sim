@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 14</title>
+<title>Flight Sim — Phase 15</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -858,9 +858,177 @@
     text-align: center;
     opacity: 0.7;
   }
+
+  /* ===== Start Screen ===== */
+  #start-screen {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 100;
+    background: radial-gradient(ellipse at center, #0a1a0a 0%, #000000 100%);
+    justify-content: center;
+    align-items: center;
+    font-family: 'Courier New', monospace;
+    overflow-y: auto;
+  }
+  #start-screen.visible { display: flex; }
+  .start-panel {
+    background: rgba(0, 30, 10, 0.9);
+    border: 1px solid #0a4;
+    border-radius: 12px;
+    padding: 32px 40px;
+    max-width: 920px;
+    width: 90%;
+    box-shadow: 0 0 40px rgba(0, 170, 68, 0.15);
+  }
+  .start-title {
+    text-align: center;
+    font-size: 36px;
+    font-weight: bold;
+    color: #0f0;
+    letter-spacing: 4px;
+    margin-bottom: 4px;
+    text-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+  }
+  .start-subtitle {
+    text-align: center;
+    color: #0a6;
+    font-size: 13px;
+    letter-spacing: 2px;
+    margin-bottom: 28px;
+  }
+  .section-label {
+    color: #0c8;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #0a4;
+    padding-bottom: 6px;
+  }
+  .aircraft-grid, .env-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .aircraft-card, .env-card {
+    background: rgba(0, 20, 8, 0.8);
+    border: 1.5px solid #333;
+    border-radius: 8px;
+    padding: 16px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .aircraft-card:hover, .env-card:hover {
+    border-color: #0a6;
+  }
+  .aircraft-card.selected, .env-card.selected {
+    border-color: #0ff;
+    box-shadow: 0 0 12px rgba(0, 255, 255, 0.2), inset 0 0 20px rgba(0, 255, 255, 0.05);
+  }
+  .card-name {
+    color: #0f0;
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 4px;
+  }
+  .card-type {
+    color: #0a8;
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .card-desc {
+    color: #777;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .card-stats {
+    color: #0a6;
+    font-size: 11px;
+    margin-top: 8px;
+    line-height: 1.6;
+  }
+  #begin-flight-btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    background: #0a4;
+    color: #000;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.2s;
+  }
+  #begin-flight-btn:hover { background: #0c6; }
+  .start-controls {
+    color: #555;
+    font-size: 11px;
+    text-align: center;
+    margin-top: 16px;
+    line-height: 1.8;
+  }
 </style>
 </head>
 <body>
+
+<div id="start-screen" class="visible">
+  <div class="start-panel">
+    <div class="start-title">FLIGHT SIM</div>
+    <div class="start-subtitle">PHASE 15</div>
+
+    <div class="section-label">SELECT AIRCRAFT</div>
+    <div class="aircraft-grid">
+      <div class="aircraft-card selected" data-aircraft="trainer">
+        <div class="card-name">Prop Trainer</div>
+        <div class="card-type">Single Prop</div>
+        <div class="card-desc">Light single-engine trainer. Forgiving handling, low stall speed.</div>
+        <div class="card-stats">Mass: 1,000 kg | Thrust: 15 kN<br>Flaps: 0/10/20/30</div>
+      </div>
+      <div class="aircraft-card" data-aircraft="fighter">
+        <div class="card-name">Fighter Jet</div>
+        <div class="card-type">Military Jet</div>
+        <div class="card-desc">Fast and agile military jet. High thrust, responsive controls.</div>
+        <div class="card-stats">Mass: 9,000 kg | Thrust: 80 kN<br>Flaps: 0/20</div>
+      </div>
+      <div class="aircraft-card" data-aircraft="airliner">
+        <div class="card-name">Airliner</div>
+        <div class="card-type">Twin Jet</div>
+        <div class="card-desc">Heavy twin-engine airliner. Stable and sluggish, high inertia.</div>
+        <div class="card-stats">Mass: 40,000 kg | Thrust: 200 kN<br>Flaps: 0/5/15/25/40</div>
+      </div>
+    </div>
+
+    <div class="section-label">SELECT ENVIRONMENT</div>
+    <div class="env-grid">
+      <div class="env-card selected" data-env="alpine">
+        <div class="card-name">Alpine Valley</div>
+        <div class="card-desc">Green mountains, snow peaks, clear lakes.</div>
+      </div>
+      <div class="env-card" data-env="desert">
+        <div class="card-name">Desert Mesa</div>
+        <div class="card-desc">Arid dunes and mesas, hazy warm sky.</div>
+      </div>
+      <div class="env-card" data-env="coastal">
+        <div class="card-name">Tropical Coast</div>
+        <div class="card-desc">Islands and ocean, lush green, deep blue sky.</div>
+      </div>
+    </div>
+
+    <button id="begin-flight-btn">BEGIN FLIGHT</button>
+    <div class="start-controls">
+      W/S Throttle | Arrows Pitch/Roll | A/D Yaw | G Gear | F Flaps | B Brake | L AutoLvl | C Camera | M Mute | P Pause
+    </div>
+  </div>
+</div>
 
 <canvas id="renderCanvas"></canvas>
 
@@ -1156,12 +1324,21 @@ class SimplexNoise {
 // ============================================================
 // Terrain Height Function — source of truth for physics & visuals
 // ============================================================
-const simplex = new SimplexNoise(42);
-const simplexRegion = new SimplexNoise(137);
-const simplexWarp = new SimplexNoise(256);
-const simplexRidge = new SimplexNoise(389);
-const TERRAIN_MAX_HEIGHT = 1000;
-const WATER_LEVEL = 5;
+let simplex = new SimplexNoise(42);
+let simplexRegion = new SimplexNoise(137);
+let simplexWarp = new SimplexNoise(256);
+let simplexRidge = new SimplexNoise(389);
+let TERRAIN_MAX_HEIGHT = 1000;
+let WATER_LEVEL = 5;
+
+function initTerrainNoise(env) {
+  simplex = new SimplexNoise(env.seeds[0]);
+  simplexRegion = new SimplexNoise(env.seeds[1]);
+  simplexWarp = new SimplexNoise(env.seeds[2]);
+  simplexRidge = new SimplexNoise(env.seeds[3]);
+  WATER_LEVEL = env.WATER_LEVEL;
+  TERRAIN_MAX_HEIGHT = env.maxHeight;
+}
 
 function getTerrainHeight(x, z) {
   // Flat airfield zone around the full runway (z=0 to z=-2000)
@@ -1171,9 +1348,10 @@ function getTerrainHeight(x, z) {
   const dz = Math.abs(z - clampedZ);
   const distToRunway = Math.sqrt(dx * dx + dz * dz);
 
-  // Inner flat zone: 400m from runway centerline — flat at WATER_LEVEL
-  if (distToRunway < 400) return WATER_LEVEL;
-  // Transition zone: 400m to 5000m — smoothstep from WATER_LEVEL to full terrain
+  // Inner flat zone: 400m from runway centerline — flat at airfield level
+  const airfieldLevel = Math.max(WATER_LEVEL, 0);
+  if (distToRunway < 400) return airfieldLevel;
+  // Transition zone: 400m to 5000m — smoothstep from airfield to full terrain
   let flattenFactor = 1.0;
   if (distToRunway < 5000) {
     const t = (distToRunway - 400) / 4600;
@@ -1191,7 +1369,7 @@ function getTerrainHeight(x, z) {
     regionRaw *= t * t * (3 - 2 * t);
   }
 
-  // Map region to max height: plains (0-0.3) → 50m, hills (0.3-0.7) → 50-200m, mountains (0.7-1.0) → 200-1100m
+  // Map region to max height: plains (0-0.3) → 50m, hills (0.3-0.7) → 50-200m, mountains (0.7-1.0) → 200-maxHeight
   let maxHeight;
   if (regionRaw < 0.3) {
     maxHeight = 50;
@@ -1200,7 +1378,7 @@ function getTerrainHeight(x, z) {
     maxHeight = 50 + t * 150;
   } else {
     const t = (regionRaw - 0.7) / 0.3;
-    maxHeight = 200 + t * 900;
+    maxHeight = 200 + t * (TERRAIN_MAX_HEIGHT - 100);
   }
 
   // --- Detail noise: 3-octave fBm for ground texture (always present) ---
@@ -1239,7 +1417,7 @@ function getTerrainHeight(x, z) {
   }
 
   const rawHeight = detailHeight + mountainHeight;
-  const finalHeight = WATER_LEVEL + (rawHeight - WATER_LEVEL) * flattenFactor;
+  const finalHeight = airfieldLevel + (rawHeight - airfieldLevel) * flattenFactor;
   return Math.max(0, finalHeight);
 }
 
@@ -1251,7 +1429,8 @@ const OCEAN_BLEND_START = 22000;
 
 function getTerrainHeightBounded(x, z) {
   const dist = Math.sqrt(x * x + z * z);
-  if (dist > WORLD_RADIUS) return WATER_LEVEL;
+  const waterClamp = Math.max(WATER_LEVEL, 0);
+  if (dist > WORLD_RADIUS) return waterClamp;
   const h = getTerrainHeight(x, z);
   let finalH;
   if (dist > OCEAN_BLEND_START) {
@@ -1260,10 +1439,11 @@ function getTerrainHeightBounded(x, z) {
   } else {
     finalH = h;
   }
-  return Math.max(finalH, WATER_LEVEL);
+  return Math.max(finalH, waterClamp);
 }
 
 function isOverWater(x, z) {
+  if (WATER_LEVEL < 0) return false; // no inland water in dry environments
   const dist = Math.sqrt(x * x + z * z);
   if (dist > WORLD_RADIUS) return true;
   const h = getTerrainHeight(x, z);
@@ -1278,12 +1458,13 @@ function isOverWater(x, z) {
 // AudioManager — Procedural sound via Web Audio API
 // ============================================================
 class AudioManager {
-  constructor() {
+  constructor(engineType) {
     this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     this.muted = false;
     this.wasOnGround = true;
     this.wasStalling = false;
     this.stallPulseInterval = null;
+    this.engineType = engineType || 'prop';
 
     // Master gain
     this.masterGain = this.audioCtx.createGain();
@@ -1298,12 +1479,16 @@ class AudioManager {
       data[i] = Math.random() * 2 - 1;
     }
 
-    this._initEngine();
+    if (this.engineType === 'jet') {
+      this._initJetEngine();
+    } else {
+      this._initPropEngine();
+    }
     this._initWind();
     this._initStall();
   }
 
-  _initEngine() {
+  _initPropEngine() {
     const ctx = this.audioCtx;
 
     // Engine gain node
@@ -1372,6 +1557,55 @@ class AudioManager {
     this.engineNoise.start();
   }
 
+  _initJetEngine() {
+    const ctx = this.audioCtx;
+
+    // Jet engine gain
+    this.engineGain = ctx.createGain();
+    this.engineGain.gain.value = 0.15;
+    this.engineGain.connect(this.masterGain);
+
+    // Jet core: white noise → bandpass for whoosh
+    this.jetNoise = ctx.createBufferSource();
+    this.jetNoise.buffer = this.noiseBuffer;
+    this.jetNoise.loop = true;
+    this.jetBandpass = ctx.createBiquadFilter();
+    this.jetBandpass.type = 'bandpass';
+    this.jetBandpass.frequency.value = 1200;
+    this.jetBandpass.Q.value = 0.8;
+    this.jetNoiseGain = ctx.createGain();
+    this.jetNoiseGain.gain.value = 0.5;
+    this.jetNoise.connect(this.jetBandpass);
+    this.jetBandpass.connect(this.jetNoiseGain);
+    this.jetNoiseGain.connect(this.engineGain);
+    this.jetNoise.start();
+
+    // Jet high whine — narrow bandpass noise for turbine character
+    this.jetWhineNoise = ctx.createBufferSource();
+    this.jetWhineNoise.buffer = this.noiseBuffer;
+    this.jetWhineNoise.loop = true;
+    this.jetWhineBP = ctx.createBiquadFilter();
+    this.jetWhineBP.type = 'bandpass';
+    this.jetWhineBP.frequency.value = 3000;
+    this.jetWhineBP.Q.value = 4;
+    this.jetWhineGain = ctx.createGain();
+    this.jetWhineGain.gain.value = 0.15;
+    this.jetWhineNoise.connect(this.jetWhineBP);
+    this.jetWhineBP.connect(this.jetWhineGain);
+    this.jetWhineGain.connect(this.engineGain);
+    this.jetWhineNoise.start();
+
+    // Low rumble — sine oscillator
+    this.jetRumble = ctx.createOscillator();
+    this.jetRumble.type = 'sine';
+    this.jetRumble.frequency.value = 70;
+    this.jetRumbleGain = ctx.createGain();
+    this.jetRumbleGain.gain.value = 0.25;
+    this.jetRumble.connect(this.jetRumbleGain);
+    this.jetRumbleGain.connect(this.engineGain);
+    this.jetRumble.start();
+  }
+
   _initWind() {
     const ctx = this.audioCtx;
 
@@ -1410,35 +1644,18 @@ class AudioManager {
     const tau = 0.05; // smoothing time constant
 
     // --- Engine ---
-    const throttle = model.throttle;
-    const airspeed = model.airspeed;
-
-    const baseFreq = 80 + throttle * 80 + airspeed * 0.1;
-    this.baseOsc.frequency.setTargetAtTime(baseFreq, now, tau);
-    this.harm2.frequency.setTargetAtTime(baseFreq * 2, now, tau);
-    this.harm3.frequency.setTargetAtTime(baseFreq * 3, now, tau);
-
-    // Prop modulation rate scales with throttle
-    this.propMod.frequency.setTargetAtTime(15 + throttle * 10, now, tau);
-
-    // Engine noise bandpass center
-    this.engineNoiseBandpass.frequency.setTargetAtTime(300 + throttle * 500, now, tau);
-
-    // Engine volume
-    const onGroundBoost = model.onGround ? 1.15 : 1.0;
-    this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.2) * onGroundBoost, now, tau);
-
-    // Ground harmonic boost (+3dB ≈ *1.4)
-    const harmBoost = model.onGround ? 1.4 : 1.0;
-    this.harm2Gain.gain.setTargetAtTime(0.25 * harmBoost, now, tau);
-    this.harm3Gain.gain.setTargetAtTime(0.125 * harmBoost, now, tau);
+    if (this.engineType === 'jet') {
+      this._updateJetEngine(model, now, tau);
+    } else {
+      this._updatePropEngine(model, now, tau);
+    }
 
     // --- Wind ---
-    const windCutoff = 200 + Math.min(airspeed, 150) * 20;
+    const windCutoff = 200 + Math.min(model.airspeed, 150) * 20;
     const sbBoost = model.speedBrakeDeployed ? 500 : 0;
     this.windFilter.frequency.setTargetAtTime(windCutoff + sbBoost, now, tau);
 
-    let windVol = Math.min(airspeed / 120, 1.0) * 0.25;
+    let windVol = Math.min(model.airspeed / 120, 1.0) * 0.25;
     if (model.speedBrakeDeployed) windVol *= 1.4;
     this.windGain.gain.setTargetAtTime(windVol, now, tau);
 
@@ -1458,6 +1675,49 @@ class AudioManager {
       this.playTouchdownSound(descentRate);
     }
     this.wasOnGround = model.onGround;
+  }
+
+  _updatePropEngine(model, now, tau) {
+    const throttle = model.throttle;
+    const airspeed = model.airspeed;
+
+    const baseFreq = 80 + throttle * 80 + airspeed * 0.1;
+    this.baseOsc.frequency.setTargetAtTime(baseFreq, now, tau);
+    this.harm2.frequency.setTargetAtTime(baseFreq * 2, now, tau);
+    this.harm3.frequency.setTargetAtTime(baseFreq * 3, now, tau);
+
+    this.propMod.frequency.setTargetAtTime(15 + throttle * 10, now, tau);
+    this.engineNoiseBandpass.frequency.setTargetAtTime(300 + throttle * 500, now, tau);
+
+    const onGroundBoost = model.onGround ? 1.15 : 1.0;
+    this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.2) * onGroundBoost, now, tau);
+
+    const harmBoost = model.onGround ? 1.4 : 1.0;
+    this.harm2Gain.gain.setTargetAtTime(0.25 * harmBoost, now, tau);
+    this.harm3Gain.gain.setTargetAtTime(0.125 * harmBoost, now, tau);
+  }
+
+  _updateJetEngine(model, now, tau) {
+    const throttle = model.throttle;
+    const airspeed = model.airspeed;
+
+    // Bandpass center shifts with throttle: 800Hz idle → 2300Hz full
+    const bpFreq = 800 + throttle * 1500 + airspeed * 0.3;
+    this.jetBandpass.frequency.setTargetAtTime(bpFreq, now, tau);
+    // Q tightens with higher throttle for more focused tone
+    this.jetBandpass.Q.setTargetAtTime(0.8 + throttle * 1.5, now, tau);
+
+    // Turbine whine pitch rises with throttle
+    this.jetWhineBP.frequency.setTargetAtTime(3000 + throttle * 2000, now, tau);
+    this.jetWhineGain.gain.setTargetAtTime(0.1 + throttle * 0.15, now, tau);
+
+    // Low rumble frequency: 60Hz idle → 100Hz full
+    this.jetRumble.frequency.setTargetAtTime(60 + throttle * 40, now, tau);
+    this.jetRumbleGain.gain.setTargetAtTime(0.15 + throttle * 0.2, now, tau);
+
+    // Overall engine volume
+    const onGroundBoost = model.onGround ? 1.1 : 1.0;
+    this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.25) * onGroundBoost, now, tau);
   }
 
   _startStallPulse() {
@@ -1585,11 +1845,16 @@ class AudioManager {
     this._stopStallPulse();
     this.wasOnGround = true;
     this.wasStalling = false;
-    // Reset continuous params to idle
     const now = this.audioCtx.currentTime;
-    this.baseOsc.frequency.setTargetAtTime(80, now, 0.02);
-    this.harm2.frequency.setTargetAtTime(160, now, 0.02);
-    this.harm3.frequency.setTargetAtTime(240, now, 0.02);
+    if (this.engineType === 'prop') {
+      this.baseOsc.frequency.setTargetAtTime(80, now, 0.02);
+      this.harm2.frequency.setTargetAtTime(160, now, 0.02);
+      this.harm3.frequency.setTargetAtTime(240, now, 0.02);
+    } else {
+      this.jetBandpass.frequency.setTargetAtTime(800, now, 0.02);
+      this.jetRumble.frequency.setTargetAtTime(70, now, 0.02);
+      this.jetRumbleGain.gain.setTargetAtTime(0.25, now, 0.02);
+    }
     this.engineGain.gain.setTargetAtTime(0.15, now, 0.02);
     this.windGain.gain.setTargetAtTime(0, now, 0.02);
     this.windFilter.frequency.setTargetAtTime(200, now, 0.02);
@@ -1622,66 +1887,70 @@ function generateTerrainTexture(scene, worldX, worldZ, chunkSize, texSize) {
       const noiseVal = simplex.noise2D(wx * 0.01, wz * 0.01) * 0.5 + 0.5;
       const fineNoise = simplex.noise2D(wx * 0.05, wz * 0.05) * 15;
 
-      // Base: bright green grass (low elevation, flat)
-      let r = 65 + noiseVal * 30 + fineNoise;
-      let g = 110 + noiseVal * 40 + fineNoise;
-      let b = 35 + noiseVal * 15;
+      const tc = activeEnvironment.terrainColors;
 
-      // Forest: dark green on low-elevation moderate slopes (15-30°)
+      // Base: grass (low elevation, flat)
+      let r = tc.grass.r + noiseVal * tc.grass.noiseR + fineNoise;
+      let g = tc.grass.g + noiseVal * tc.grass.noiseG + fineNoise;
+      let b = tc.grass.b + noiseVal * tc.grass.noiseB;
+
+      // Forest: on low-elevation moderate slopes (15-30°)
       const forestBlend = Math.max(0, Math.min(1, (slopeAngle - 15) / 15)) * Math.max(0, 1 - h / 200);
       if (forestBlend > 0) {
-        const fR = 30 + noiseVal * 20 + fineNoise;
-        const fG = 65 + noiseVal * 25 + fineNoise;
-        const fB = 20 + noiseVal * 10;
+        const fR = tc.forest.r + noiseVal * tc.forest.noiseR + fineNoise;
+        const fG = tc.forest.g + noiseVal * tc.forest.noiseG + fineNoise;
+        const fB = tc.forest.b + noiseVal * tc.forest.noiseB;
         r += (fR - r) * forestBlend;
         g += (fG - g) * forestBlend;
         b += (fB - b) * forestBlend;
       }
 
-      // Alpine meadow: tan/light brown at mid elevation (150-700m), flat areas
+      // Alpine meadow: mid elevation (150-700m), flat areas
       const alpineElev = Math.max(0, Math.min(1, (h - 150) / 100)) * Math.max(0, 1 - Math.max(0, (h - 700) / 100));
       const alpineSlope = Math.max(0, 1 - slopeAngle / 25);
       const alpineBlend = alpineElev * alpineSlope;
       if (alpineBlend > 0) {
-        const aR = 160 + noiseVal * 30 + fineNoise;
-        const aG = 140 + noiseVal * 25 + fineNoise;
-        const aB = 90 + noiseVal * 20;
+        const aR = tc.alpine.r + noiseVal * tc.alpine.noiseR + fineNoise;
+        const aG = tc.alpine.g + noiseVal * tc.alpine.noiseG + fineNoise;
+        const aB = tc.alpine.b + noiseVal * tc.alpine.noiseB;
         r += (aR - r) * alpineBlend;
         g += (aG - g) * alpineBlend;
         b += (aB - b) * alpineBlend;
       }
 
-      // Rock: gray-brown on steep slopes (30°+) or very steep (35°+) at any elevation
+      // Rock: steep slopes (30°+) or very steep (35°+) at any elevation
       const steepRock = Math.max(0, Math.min(1, (slopeAngle - 30) / 10));
       const vSteepRock = Math.max(0, Math.min(1, (slopeAngle - 35) / 5));
       const elevRock = Math.max(0, Math.min(1, (h - 300) / 200)) * steepRock;
       const rockBlend = Math.max(elevRock, vSteepRock);
       if (rockBlend > 0) {
-        const rR = 120 + noiseVal * 35 + fineNoise;
-        const rG = 105 + noiseVal * 25 + fineNoise;
-        const rB = 85 + noiseVal * 20;
+        const rR = tc.rock.r + noiseVal * tc.rock.noiseR + fineNoise;
+        const rG = tc.rock.g + noiseVal * tc.rock.noiseG + fineNoise;
+        const rB = tc.rock.b + noiseVal * tc.rock.noiseB;
         r += (rR - r) * rockBlend;
         g += (rG - g) * rockBlend;
         b += (rB - b) * rockBlend;
       }
 
-      // Snow: white at high elevation (700m+), stronger on flat surfaces
-      const snowElev = Math.max(0, Math.min(1, (h - 700) / 150));
-      const snowSlopePenalty = Math.max(0, Math.min(1, (slopeAngle - 20) / 15));
-      const snowBlend = snowElev * (1 - snowSlopePenalty * 0.8);
-      if (snowBlend > 0) {
-        const sR = 230 + noiseVal * 25;
-        const sG = 235 + noiseVal * 20;
-        const sB = 240 + noiseVal * 15;
-        r += (sR - r) * snowBlend;
-        g += (sG - g) * snowBlend;
-        b += (sB - b) * snowBlend;
+      // Snow: high elevation (700m+), stronger on flat surfaces — skip if env has no snow
+      if (activeEnvironment.hasSnow) {
+        const snowElev = Math.max(0, Math.min(1, (h - 700) / 150));
+        const snowSlopePenalty = Math.max(0, Math.min(1, (slopeAngle - 20) / 15));
+        const snowBlend = snowElev * (1 - snowSlopePenalty * 0.8);
+        if (snowBlend > 0) {
+          const sR = tc.snow.r + noiseVal * tc.snow.noiseR;
+          const sG = tc.snow.g + noiseVal * tc.snow.noiseG;
+          const sB = tc.snow.b + noiseVal * tc.snow.noiseB;
+          r += (sR - r) * snowBlend;
+          g += (sG - g) * snowBlend;
+          b += (sB - b) * snowBlend;
+        }
       }
 
-      // Water tint: blue-green for areas below WATER_LEVEL
-      if (rawH < WATER_LEVEL) {
+      // Water tint: for areas below WATER_LEVEL (only if WATER_LEVEL > 0)
+      if (WATER_LEVEL > 0 && rawH < WATER_LEVEL) {
         const waterDepth = Math.min(1, (WATER_LEVEL - rawH) / 10);
-        const wR = 40, wG = 90, wB = 110;
+        const wR = tc.water.r, wG = tc.water.g, wB = tc.water.b;
         r += (wR - r) * waterDepth;
         g += (wG - g) * waterDepth;
         b += (wB - b) * waterDepth;
@@ -1704,8 +1973,10 @@ function generateTerrainTexture(scene, worldX, worldZ, chunkSize, texSize) {
 // ============================================================
 const aircraftProfiles = {
   trainer: {
-    name: "Training Aircraft",
+    name: "Prop Trainer",
+    type: 'prop',
     mass: 1000, wingArea: 16, maxThrust: 15000,
+    cd0: 0.03, takeoffSpeed: 60,
     clSlope: 5.5, stallAngle: 15,
     pitchAuthority: 0.6, rollAuthority: 2.0, yawAuthority: 0.4,
     pitchDamping: 3.0, rollDamping: 3.0, yawDamping: 2.5,
@@ -1719,26 +1990,130 @@ const aircraftProfiles = {
     hasSpeedBrake: true, speedBrakeDragMultiplier: 0.6,
     wheelBrakeFriction: 0.5,
     approachSpeeds: [120, 100, 85, 75],
+    description: "Light single-engine trainer. Forgiving handling, low stall speed.",
   },
   fighter: {
-    name: "Fighter Aircraft",
-    mass: 900, wingArea: 14, maxThrust: 20000,
+    name: "Fighter Jet",
+    type: 'jet',
+    mass: 9000, wingArea: 28, maxThrust: 80000,
+    cd0: 0.025, takeoffSpeed: 80,
     clSlope: 5.0, stallAngle: 18,
     pitchAuthority: 1.0, rollAuthority: 3.5, yawAuthority: 0.6,
     pitchDamping: 2.0, rollDamping: 2.0, yawDamping: 1.8,
     pitchStability: 0.3, dihedralStrength: 0.8, weathervaneStrength: 1.0,
     trimAoA: 1, autoLevel: false, autoLevelStrength: 0.5,
     gearDragPenalty: 0.25,
-    flapSettings: [0, 10, 20, 30],
+    flapSettings: [0, 20],
     flapLiftMultiplier: 0.010,
     flapDragMultiplier: 0.0012,
     flapPitchMoment: -0.002,
     hasSpeedBrake: true, speedBrakeDragMultiplier: 0.55,
     wheelBrakeFriction: 0.45,
-    approachSpeeds: [140, 115, 100, 85],
+    approachSpeeds: [160, 130],
+    hasAfterburner: true,
+    description: "Fast and agile military jet. High thrust, responsive controls.",
+  },
+  airliner: {
+    name: "Airliner",
+    type: 'jet',
+    mass: 40000, wingArea: 125, maxThrust: 200000,
+    cd0: 0.025, takeoffSpeed: 75,
+    clSlope: 5.5, stallAngle: 14,
+    pitchAuthority: 0.3, rollAuthority: 0.8, yawAuthority: 0.25,
+    pitchDamping: 4.0, rollDamping: 4.0, yawDamping: 3.5,
+    pitchStability: 0.6, dihedralStrength: 2.0, weathervaneStrength: 2.0,
+    trimAoA: 3, autoLevel: true, autoLevelStrength: 1.5,
+    gearDragPenalty: 0.35,
+    flapSettings: [0, 5, 15, 25, 40],
+    flapLiftMultiplier: 0.015,
+    flapDragMultiplier: 0.002,
+    flapPitchMoment: -0.004,
+    hasSpeedBrake: true, speedBrakeDragMultiplier: 0.5,
+    wheelBrakeFriction: 0.55,
+    approachSpeeds: [160, 150, 140, 130, 120],
+    description: "Heavy twin-engine airliner. Stable and sluggish, high inertia.",
   },
 };
 let activeProfile = aircraftProfiles.trainer;
+
+// ============================================================
+// Environment Presets — terrain/sky/fog parameters
+// ============================================================
+const environmentPresets = {
+  alpine: {
+    name: "Alpine Valley",
+    description: "Green mountains, snow peaks, clear lakes.",
+    seeds: [42, 137, 256, 389],
+    turbidity: 3, rayleigh: 1.5,
+    mieCoefficient: 0.005, mieDirectionalG: 0.8,
+    sunPosition: [-50, 100, -30],
+    sunIntensity: 1.0,
+    clearColor: [0.53, 0.72, 0.88],
+    fogDensity: 0.00005,
+    fogColor: [0.76, 0.84, 0.90],
+    oceanColor: [0.05, 0.12, 0.2],
+    WATER_LEVEL: 5,
+    maxHeight: 1000,
+    hasSnow: true,
+    terrainColors: {
+      grass:  { r: 65, g: 110, b: 35, noiseR: 30, noiseG: 40, noiseB: 15 },
+      forest: { r: 30, g: 65,  b: 20, noiseR: 20, noiseG: 25, noiseB: 10 },
+      alpine: { r: 160, g: 140, b: 90, noiseR: 30, noiseG: 25, noiseB: 20 },
+      rock:   { r: 120, g: 105, b: 85, noiseR: 35, noiseG: 25, noiseB: 20 },
+      snow:   { r: 230, g: 235, b: 240, noiseR: 25, noiseG: 20, noiseB: 15 },
+      water:  { r: 40, g: 90, b: 110 },
+    },
+  },
+  desert: {
+    name: "Desert Mesa",
+    description: "Arid dunes and mesas, hazy warm sky.",
+    seeds: [101, 202, 303, 404],
+    turbidity: 8, rayleigh: 1.2,
+    mieCoefficient: 0.01, mieDirectionalG: 0.75,
+    sunPosition: [-30, 120, -20],
+    sunIntensity: 1.2,
+    clearColor: [0.85, 0.75, 0.60],
+    fogDensity: 0.00004,
+    fogColor: [0.85, 0.75, 0.60],
+    oceanColor: [0.15, 0.12, 0.08],
+    WATER_LEVEL: -50,
+    maxHeight: 600,
+    hasSnow: false,
+    terrainColors: {
+      grass:  { r: 180, g: 155, b: 100, noiseR: 25, noiseG: 20, noiseB: 15 },
+      forest: { r: 140, g: 120, b: 75, noiseR: 20, noiseG: 15, noiseB: 10 },
+      alpine: { r: 200, g: 170, b: 120, noiseR: 25, noiseG: 20, noiseB: 15 },
+      rock:   { r: 160, g: 130, b: 95, noiseR: 30, noiseG: 25, noiseB: 20 },
+      snow:   { r: 220, g: 200, b: 170, noiseR: 20, noiseG: 15, noiseB: 10 },
+      water:  { r: 140, g: 120, b: 80 },
+    },
+  },
+  coastal: {
+    name: "Tropical Coast",
+    description: "Islands and ocean, lush green, deep blue sky.",
+    seeds: [77, 154, 231, 308],
+    turbidity: 2, rayleigh: 2.0,
+    mieCoefficient: 0.003, mieDirectionalG: 0.85,
+    sunPosition: [-40, 110, -25],
+    sunIntensity: 1.1,
+    clearColor: [0.45, 0.65, 0.90],
+    fogDensity: 0.00003,
+    fogColor: [0.60, 0.75, 0.90],
+    oceanColor: [0.02, 0.08, 0.18],
+    WATER_LEVEL: 15,
+    maxHeight: 400,
+    hasSnow: false,
+    terrainColors: {
+      grass:  { r: 50, g: 130, b: 45, noiseR: 25, noiseG: 35, noiseB: 15 },
+      forest: { r: 25, g: 80,  b: 30, noiseR: 15, noiseG: 25, noiseB: 10 },
+      alpine: { r: 140, g: 130, b: 80, noiseR: 25, noiseG: 20, noiseB: 15 },
+      rock:   { r: 110, g: 100, b: 80, noiseR: 30, noiseG: 25, noiseB: 20 },
+      snow:   { r: 200, g: 210, b: 220, noiseR: 20, noiseG: 15, noiseB: 10 },
+      water:  { r: 20, g: 60, b: 120 },
+    },
+  },
+};
+let activeEnvironment = environmentPresets.alpine;
 
 // ============================================================
 // FlightModel — core physics
@@ -1757,7 +2132,7 @@ class FlightModel {
     this.postStallFactor = 0.4;   // CL multiplier after stall (lift drops to 40%)
 
     // Drag
-    this.cd0 = 0.03;              // parasitic drag coefficient (clean light aircraft)
+    this.cd0 = activeProfile.cd0 ?? 0.03;
     this.cdInducedK = 0.06;       // induced drag factor: CD_induced = K * CL²
     this.cdStall = 0.15;          // extra drag added during stall
 
@@ -1780,7 +2155,7 @@ class FlightModel {
 
     // Ground physics
     this.groundFriction = 0.03;     // rolling friction coefficient (tires on asphalt)
-    this.takeoffSpeed = 60;         // m/s — minimum speed for takeoff
+    this.takeoffSpeed = activeProfile.takeoffSpeed ?? 60;
     this.noseWheelSteer = 0.8;      // yaw rate on ground (rad/s at full input)
 
     // Landing system
@@ -2756,8 +3131,9 @@ class TerrainManager {
       width: 60000, height: 60000, subdivisions: 1
     }, scene);
     ocean.position.y = -2;
+    const oc = activeEnvironment.oceanColor;
     const oceanMat = new BABYLON.PBRMetallicRoughnessMaterial('oceanMat', scene);
-    oceanMat.baseColor = new BABYLON.Color3(0.05, 0.12, 0.2);
+    oceanMat.baseColor = new BABYLON.Color3(oc[0], oc[1], oc[2]);
     oceanMat.metallic = 0.0;
     oceanMat.roughness = 0.7;
     ocean.material = oceanMat;
@@ -2936,12 +3312,12 @@ class TerrainManager {
 // ============================================================
 // Babylon.js Scene Setup
 // ============================================================
-function createScene(engine) {
+function createScene(engine, env) {
   const scene = new BABYLON.Scene(engine);
   scene.useRightHandedSystem = true;
 
-  // Clear color (sky blue)
-  scene.clearColor = new BABYLON.Color4(0.53, 0.72, 0.88, 1);
+  // Clear color from environment
+  scene.clearColor = new BABYLON.Color4(env.clearColor[0], env.clearColor[1], env.clearColor[2], 1);
 
   // PBR environment texture for reflections
   scene.environmentTexture = BABYLON.CubeTexture.CreateFromPrefilteredData(
@@ -2949,19 +3325,22 @@ function createScene(engine) {
   );
   scene.environmentIntensity = 0.7;
 
+  // Airfield level — always at 0 or above, even in dry environments
+  const AFL = Math.max(WATER_LEVEL, 0);
+
   // Lights
   const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
   hemi.intensity = 0.4;
 
   const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5, -1, -0.3), scene);
-  sun.intensity = 1.0;
+  sun.intensity = env.sunIntensity;
 
   // Chunked terrain manager (replaces single ground mesh)
   const terrainManager = new TerrainManager(scene, null); // shadowGen set after creation
 
   // Runway — 45m wide, 2000m long, along -Z axis
   const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 45, height: 2000 }, scene);
-  runway.position.y = WATER_LEVEL + 0.05; // above ground to prevent z-fighting
+  runway.position.y = AFL + 0.05; // above ground to prevent z-fighting
   runway.position.z = -1000; // spans z=0 to z=-2000
   runway.renderingGroupId = 1;
 
@@ -3023,7 +3402,7 @@ function createScene(engine) {
   const papiX = -30;  // left of runway
   for (let i = 0; i < 4; i++) {
     const sphere = BABYLON.MeshBuilder.CreateSphere('papi' + i, { diameter: 0.6, segments: 8 }, scene);
-    sphere.position.set(papiX, WATER_LEVEL + 0.5, papiZ + i * 2);
+    sphere.position.set(papiX, AFL + 0.5, papiZ + i * 2);
     const mat = new BABYLON.StandardMaterial('papiMat' + i, scene);
     mat.disableLighting = true;
     mat.emissiveColor = new BABYLON.Color3(1, 1, 1); // will be updated each frame
@@ -3037,12 +3416,12 @@ function createScene(engine) {
   const skyMat = new BABYLON.SkyMaterial('skyMat', scene);
   skyMat.backFaceCulling = false;
   skyMat.luminance = 1.0;
-  skyMat.turbidity = 3;
-  skyMat.rayleigh = 1.5;
-  skyMat.mieCoefficient = 0.005;
-  skyMat.mieDirectionalG = 0.8;
+  skyMat.turbidity = env.turbidity;
+  skyMat.rayleigh = env.rayleigh;
+  skyMat.mieCoefficient = env.mieCoefficient;
+  skyMat.mieDirectionalG = env.mieDirectionalG;
   skyMat.useSunPosition = true;
-  skyMat.sunPosition = new BABYLON.Vector3(-50, 100, -30);
+  skyMat.sunPosition = new BABYLON.Vector3(env.sunPosition[0], env.sunPosition[1], env.sunPosition[2]);
   skybox.material = skyMat;
   skybox.infiniteDistance = true;
 
@@ -3052,8 +3431,8 @@ function createScene(engine) {
 
   // Fog — exponential for natural atmospheric depth
   scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
-  scene.fogDensity = 0.00005;
-  scene.fogColor = new BABYLON.Color3(0.76, 0.84, 0.90);
+  scene.fogDensity = env.fogDensity;
+  scene.fogColor = new BABYLON.Color3(env.fogColor[0], env.fogColor[1], env.fogColor[2]);
 
   // Cascaded Shadow Generator
   const shadowGen = new BABYLON.CascadedShadowGenerator(2048, sun);
@@ -3112,24 +3491,24 @@ function createScene(engine) {
 
   // Main parallel taxiway: 15m wide, 2000m long, offset 75m east
   const taxiway = BABYLON.MeshBuilder.CreateGround('taxiway', { width: 15, height: 2000 }, scene);
-  taxiway.position.set(75, WATER_LEVEL + 0.04, -1000);
+  taxiway.position.set(75, AFL + 0.04, -1000);
   taxiway.material = taxiwayTexMat;
   taxiway.renderingGroupId = 1;
 
   // Connector taxiways at each end (perpendicular strips)
   const northConn = BABYLON.MeshBuilder.CreateGround('northConn', { width: 75, height: 15 }, scene);
-  northConn.position.set(37.5, WATER_LEVEL + 0.04, 0);
+  northConn.position.set(37.5, AFL + 0.04, 0);
   northConn.material = taxiwayPaveMat;
   northConn.renderingGroupId = 1;
 
   const southConn = BABYLON.MeshBuilder.CreateGround('southConn', { width: 75, height: 15 }, scene);
-  southConn.position.set(37.5, WATER_LEVEL + 0.04, -2000);
+  southConn.position.set(37.5, AFL + 0.04, -2000);
   southConn.material = taxiwayPaveMat;
   southConn.renderingGroupId = 1;
 
   // --- Apron / Parking Area ---
   const apron = BABYLON.MeshBuilder.CreateGround('apron', { width: 45, height: 80 }, scene);
-  apron.position.set(105, WATER_LEVEL + 0.04, -1000);
+  apron.position.set(105, AFL + 0.04, -1000);
   apron.material = taxiwayPaveMat;
   apron.renderingGroupId = 1;
 
@@ -3141,8 +3520,8 @@ function createScene(engine) {
   edgeLightSphere.material = edgeLightMat;
   edgeLightSphere.renderingGroupId = 1;
   for (let z = 0; z >= -2000; z -= 60) {
-    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-22.5, WATER_LEVEL + 0.5, z));
-    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(22.5, WATER_LEVEL + 0.5, z));
+    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-22.5, AFL + 0.5, z));
+    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(22.5, AFL + 0.5, z));
   }
 
   // --- Threshold Lights ---
@@ -3154,7 +3533,7 @@ function createScene(engine) {
   greenLightSphere.material = greenLightMat;
   greenLightSphere.renderingGroupId = 1;
   for (let i = 0; i < 10; i++) {
-    greenLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, WATER_LEVEL + 0.4, 1));
+    greenLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, AFL + 0.4, 1));
   }
 
   // Red at departure end (z=-2000)
@@ -3165,7 +3544,7 @@ function createScene(engine) {
   redLightSphere.material = redLightMat;
   redLightSphere.renderingGroupId = 1;
   for (let i = 0; i < 10; i++) {
-    redLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, WATER_LEVEL + 0.4, -2001));
+    redLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, AFL + 0.4, -2001));
   }
 
   // --- Taxiway Edge Lights (blue) ---
@@ -3176,21 +3555,21 @@ function createScene(engine) {
   blueLightSphere.material = blueLightMat;
   blueLightSphere.renderingGroupId = 1;
   for (let z = 0; z >= -2000; z -= 60) {
-    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(67.5, WATER_LEVEL + 0.3, z));
-    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(82.5, WATER_LEVEL + 0.3, z));
+    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(67.5, AFL + 0.3, z));
+    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(82.5, AFL + 0.3, z));
   }
 
   // --- Control Tower ---
   const towerX = 150, towerZ = -1000;
   const towerBase = BABYLON.MeshBuilder.CreateBox('towerBase', { width: 10, height: 20, depth: 10 }, scene);
-  towerBase.position.set(towerX, WATER_LEVEL + 10, towerZ);
+  towerBase.position.set(towerX, AFL + 10, towerZ);
   towerBase.material = concreteMat;
   towerBase.renderingGroupId = 1;
   towerBase.receiveShadows = true;
   shadowGen.addShadowCaster(towerBase);
 
   const towerCab = BABYLON.MeshBuilder.CreateBox('towerCab', { width: 12, height: 4, depth: 12 }, scene);
-  towerCab.position.set(towerX, WATER_LEVEL + 22, towerZ);
+  towerCab.position.set(towerX, AFL + 22, towerZ);
   towerCab.material = concreteMat;
   towerCab.renderingGroupId = 1;
   towerCab.receiveShadows = true;
@@ -3204,7 +3583,7 @@ function createScene(engine) {
     { w: 0.3, h: 2.5, d: 11, x: towerX + 6.15, z: towerZ },
   ].forEach((win, i) => {
     const m = BABYLON.MeshBuilder.CreateBox('towerWin' + i, { width: win.w, height: win.h, depth: win.d }, scene);
-    m.position.set(win.x, WATER_LEVEL + 22, win.z);
+    m.position.set(win.x, AFL + 22, win.z);
     m.material = towerGlassMat;
     m.renderingGroupId = 1;
   });
@@ -3217,7 +3596,7 @@ function createScene(engine) {
   ];
   hangarConfigs.forEach((cfg, i) => {
     const hg = BABYLON.MeshBuilder.CreateBox('hangar' + i, { width: cfg.w, height: cfg.h, depth: cfg.d }, scene);
-    hg.position.set(cfg.x, WATER_LEVEL + cfg.h / 2, cfg.z);
+    hg.position.set(cfg.x, AFL + cfg.h / 2, cfg.z);
     hg.material = hangarMat;
     hg.renderingGroupId = 1;
     hg.receiveShadows = true;
@@ -3226,7 +3605,7 @@ function createScene(engine) {
       const door = BABYLON.MeshBuilder.CreateBox('hangarDoor' + i, {
         width: 0.3, height: cfg.h * 0.75, depth: cfg.d * 0.6
       }, scene);
-      door.position.set(cfg.x - cfg.w / 2 - 0.15, WATER_LEVEL + cfg.h * 0.375, cfg.z);
+      door.position.set(cfg.x - cfg.w / 2 - 0.15, AFL + cfg.h * 0.375, cfg.z);
       door.material = darkOpeningMat;
       door.renderingGroupId = 1;
     }
@@ -3235,7 +3614,7 @@ function createScene(engine) {
   // --- Terminal Building ---
   const termX = 135, termZ = -1000;
   const terminal = BABYLON.MeshBuilder.CreateBox('terminal', { width: 20, height: 8, depth: 60 }, scene);
-  terminal.position.set(termX, WATER_LEVEL + 4, termZ);
+  terminal.position.set(termX, AFL + 4, termZ);
   terminal.material = concreteMat;
   terminal.renderingGroupId = 1;
   terminal.receiveShadows = true;
@@ -3245,14 +3624,14 @@ function createScene(engine) {
   for (let wi = 0; wi < 5; wi++) {
     const wz = termZ - 24 + wi * 12;
     const twin = BABYLON.MeshBuilder.CreateBox('termWin' + wi, { width: 0.3, height: 4, depth: 8 }, scene);
-    twin.position.set(termX - 10.15, WATER_LEVEL + 4, wz);
+    twin.position.set(termX - 10.15, AFL + 4, wz);
     twin.material = towerGlassMat;
     twin.renderingGroupId = 1;
   }
 
   // Covered overhang on west side
   const overhang = BABYLON.MeshBuilder.CreateBox('overhang', { width: 5, height: 0.3, depth: 50 }, scene);
-  overhang.position.set(termX - 12.5, WATER_LEVEL + 7.85, termZ);
+  overhang.position.set(termX - 12.5, AFL + 7.85, termZ);
   overhang.material = concreteMat;
   overhang.renderingGroupId = 1;
 
@@ -3262,7 +3641,7 @@ function createScene(engine) {
     const pillar = BABYLON.MeshBuilder.CreateCylinder('pillar' + pi, {
       diameter: 0.3, height: 7.85, tessellation: 8
     }, scene);
-    pillar.position.set(termX - 14.5, WATER_LEVEL + 3.925, pz);
+    pillar.position.set(termX - 14.5, AFL + 3.925, pz);
     pillar.material = concreteMat;
     pillar.renderingGroupId = 1;
   }
@@ -3276,7 +3655,7 @@ function createScene(engine) {
   const wsPole = BABYLON.MeshBuilder.CreateCylinder('wsPole', {
     diameter: 0.15, height: 6, tessellation: 8
   }, scene);
-  wsPole.position.set(wsX, WATER_LEVEL + 3, wsZ);
+  wsPole.position.set(wsX, AFL + 3, wsZ);
   wsPole.material = wsPoleMat;
   wsPole.renderingGroupId = 1;
 
@@ -3288,7 +3667,7 @@ function createScene(engine) {
     diameterTop: 0, diameterBottom: 0.8, height: 1.5, tessellation: 8
   }, scene);
   windsock.rotation.x = Math.PI / 2;
-  windsock.position.set(wsX, WATER_LEVEL + 5.8, wsZ - 0.75);
+  windsock.position.set(wsX, AFL + 5.8, wsZ - 0.75);
   windsock.material = wsSockMat;
   windsock.renderingGroupId = 1;
 
@@ -3335,10 +3714,15 @@ function createScene(engine) {
 // ============================================================
 // Aircraft Mesh — detailed procedural aircraft with control surfaces
 // ============================================================
-function createAircraftMesh(scene) {
+function createAircraftMesh(scene, profileName) {
+  if (profileName === 'fighter') return createFighterMesh(scene);
+  if (profileName === 'airliner') return createAirlinerMesh(scene);
+  return createTrainerMesh(scene);
+}
+
+function createTrainerMesh(scene) {
   const root = new BABYLON.TransformNode('aircraft', scene);
 
-  // Body offset: gear strut (1.0) + wheel (0.25) + clearance (0.15)
   const body = new BABYLON.TransformNode('body', scene);
   body.parent = root;
   body.position.y = 1.4;
@@ -3370,7 +3754,7 @@ function createAircraftMesh(scene) {
   wheelMat.metallic = 0.0;
   wheelMat.roughness = 0.9;
 
-  // === Fuselage — CreateTube with radiusFunction for smooth tapering ===
+  // === Fuselage ===
   const fusePoints = 20;
   const fuseLength = 10;
   const fusePath = [];
@@ -3382,13 +3766,10 @@ function createAircraftMesh(scene) {
     path: fusePath,
     radiusFunction: (i) => {
       const t = i / fusePoints;
-      // Smooth taper: wide in middle, narrow at nose/tail
       if (t < 0.15) {
-        // Nose taper
         const nt = t / 0.15;
         return 0.1 + 0.5 * Math.sin(nt * Math.PI / 2);
       } else if (t > 0.75) {
-        // Tail taper
         const tt = (t - 0.75) / 0.25;
         return 0.6 * (1 - tt * 0.7);
       }
@@ -3400,111 +3781,81 @@ function createAircraftMesh(scene) {
   fuselage.material = fuselageMat;
   fuselage.parent = body;
 
-  // === Canopy — hemisphere on top of forward fuselage ===
+  // === Canopy ===
   const canopy = BABYLON.MeshBuilder.CreateSphere('canopy', { diameter: 1.6, segments: 12 }, scene);
   canopy.scaling = new BABYLON.Vector3(0.6, 0.5, 1.0);
   canopy.position.set(0, 0.45, -2.0);
   canopy.material = canopyMat;
   canopy.parent = body;
 
-  // === Wings (left + right) — CreateRibbon for tapered planform ===
+  // === Wings ===
   function createWing(name, side) {
     const sign = side === 'left' ? -1 : 1;
-    const span = 6;
-    const rootChord = 2.0;
-    const tipChord = 0.8;
-    const sweep = 0.4; // trailing edge sweep
-    const thickness = 0.08;
-    const steps = 10;
-
-    const topPath = [];
-    const botPath = [];
+    const span = 6, rootChord = 2.0, tipChord = 0.8, sweep = 0.4, thickness = 0.08, steps = 10;
+    const topPath = [], botPath = [];
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const y = sign * t * span;
       const chord = rootChord + (tipChord - rootChord) * t;
       const leadZ = -chord / 2 - sweep * t;
       const midZ = leadZ + chord / 2;
-      // Airfoil-like: thicker at root, thinner at tip
       const h = thickness * (1 - 0.5 * t);
       topPath.push(new BABYLON.Vector3(y, h, midZ));
       botPath.push(new BABYLON.Vector3(y, -h, midZ));
     }
-
-    // Build ribbon from leading edge -> top -> trailing edge -> bottom -> leading edge
-    const pathArray = [topPath, botPath];
     const wing = BABYLON.MeshBuilder.CreateRibbon(name, {
-      pathArray: pathArray,
-      closePath: false,
-      sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+      pathArray: [topPath, botPath], closePath: false, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
     }, scene);
     wing.position.set(0, -0.1, -0.5);
     wing.material = fuselageMat;
     wing.parent = body;
     return wing;
   }
+  createWing('leftWing', 'left');
+  createWing('rightWing', 'right');
 
-  const leftWing = createWing('leftWing', 'left');
-  const rightWing = createWing('rightWing', 'right');
-
-  // === Ailerons — small boxes at trailing edge of outer wing ===
+  // === Ailerons ===
   function createAileron(name, xPos) {
-    // Hinge node at leading edge of aileron
     const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
     hinge.position.set(xPos, -0.1, 0.1);
     hinge.parent = body;
-    const aileron = BABYLON.MeshBuilder.CreateBox(name, {
-      width: 2.0, height: 0.06, depth: 0.4
-    }, scene);
-    // Offset so rotation appears at leading edge
+    const aileron = BABYLON.MeshBuilder.CreateBox(name, { width: 2.0, height: 0.06, depth: 0.4 }, scene);
     aileron.position.set(0, 0, 0.2);
     aileron.material = surfaceMat;
     aileron.parent = hinge;
     return hinge;
   }
-
   const leftAileron = createAileron('leftAileron', -4.5);
   const rightAileron = createAileron('rightAileron', 4.5);
 
-  // === Flaps — like ailerons but inboard ===
+  // === Flaps ===
   function createFlap(name, xPos) {
     const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
     hinge.position.set(xPos, -0.1, 0.1);
     hinge.parent = body;
-    const flap = BABYLON.MeshBuilder.CreateBox(name, {
-      width: 2.0, height: 0.06, depth: 0.5
-    }, scene);
+    const flap = BABYLON.MeshBuilder.CreateBox(name, { width: 2.0, height: 0.06, depth: 0.5 }, scene);
     flap.position.set(0, 0, 0.25);
     flap.material = surfaceMat;
     flap.parent = hinge;
     return hinge;
   }
-
   const leftFlap = createFlap('leftFlap', -2.0);
   const rightFlap = createFlap('rightFlap', 2.0);
 
-  // === Speed Brake — dorsal panel on fuselage ===
+  // === Speed Brake ===
   const speedBrakeHinge = new BABYLON.TransformNode('speedBrakeHinge', scene);
   speedBrakeHinge.position.set(0, 0.6, 1.0);
   speedBrakeHinge.parent = body;
-  const speedBrakePanel = BABYLON.MeshBuilder.CreateBox('speedBrake', {
-    width: 0.8, height: 0.04, depth: 0.6
-  }, scene);
+  const speedBrakePanel = BABYLON.MeshBuilder.CreateBox('speedBrake', { width: 0.8, height: 0.04, depth: 0.6 }, scene);
   speedBrakePanel.position.set(0, 0, 0.3);
   speedBrakePanel.material = surfaceMat;
   speedBrakePanel.parent = speedBrakeHinge;
 
-  // === Horizontal Stabilizer — tapered ribbon ===
+  // === Horizontal Stabilizer ===
   function createHStab(name, side) {
     const sign = side === 'left' ? -1 : 1;
-    const span = 2.0;
-    const rootChord = 0.8;
-    const tipChord = 0.4;
-    const thickness = 0.04;
-    const steps = 6;
-
-    const topPath = [];
-    const botPath = [];
+    const span = 2.0, rootChord = 0.8, tipChord = 0.4, thickness = 0.04, steps = 6;
+    const topPath = [], botPath = [];
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const y = sign * t * span;
@@ -3514,90 +3865,69 @@ function createAircraftMesh(scene) {
       topPath.push(new BABYLON.Vector3(y, 0.2 + h, midZ));
       botPath.push(new BABYLON.Vector3(y, 0.2 - h, midZ));
     }
-
     const stab = BABYLON.MeshBuilder.CreateRibbon(name, {
-      pathArray: [topPath, botPath],
-      closePath: false,
-      sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+      pathArray: [topPath, botPath], closePath: false, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
     }, scene);
     stab.material = fuselageMat;
     stab.parent = body;
     return stab;
   }
-
   createHStab('hStabLeft', 'left');
   createHStab('hStabRight', 'right');
 
-  // === Elevator — box at trailing edge of horizontal stabilizer ===
+  // === Elevator ===
   const elevatorHinge = new BABYLON.TransformNode('elevatorHinge', scene);
   elevatorHinge.position.set(0, 0.2, 4.5);
   elevatorHinge.parent = body;
-  const elevator = BABYLON.MeshBuilder.CreateBox('elevator', {
-    width: 3.6, height: 0.05, depth: 0.35
-  }, scene);
+  const elevator = BABYLON.MeshBuilder.CreateBox('elevator', { width: 3.6, height: 0.05, depth: 0.35 }, scene);
   elevator.position.set(0, 0, 0.175);
   elevator.material = surfaceMat;
   elevator.parent = elevatorHinge;
 
-  // === Vertical Stabilizer — tapered box ===
-  const vStab = BABYLON.MeshBuilder.CreateBox('vStab', {
-    width: 0.08, height: 1.8, depth: 1.2
-  }, scene);
+  // === Vertical Stabilizer ===
+  const vStab = BABYLON.MeshBuilder.CreateBox('vStab', { width: 0.08, height: 1.8, depth: 1.2 }, scene);
   vStab.position.set(0, 1.1, 3.8);
   vStab.material = fuselageMat;
   vStab.parent = body;
 
-  // === Rudder — box at trailing edge of vertical stabilizer ===
+  // === Rudder ===
   const rudderHinge = new BABYLON.TransformNode('rudderHinge', scene);
   rudderHinge.position.set(0, 1.1, 4.4);
   rudderHinge.parent = body;
-  const rudder = BABYLON.MeshBuilder.CreateBox('rudder', {
-    width: 0.06, height: 1.6, depth: 0.35
-  }, scene);
+  const rudder = BABYLON.MeshBuilder.CreateBox('rudder', { width: 0.06, height: 1.6, depth: 0.35 }, scene);
   rudder.position.set(0, 0, 0.175);
   rudder.material = surfaceMat;
   rudder.parent = rudderHinge;
 
-  // === Landing Gear — 3 assemblies ===
+  // === Landing Gear ===
   function createGearAssembly(name, pos) {
     const group = new BABYLON.TransformNode(name, scene);
     group.position.set(pos.x, pos.y, pos.z);
     group.parent = body;
-
-    // Strut
-    const strut = BABYLON.MeshBuilder.CreateCylinder(name + 'Strut', {
-      diameter: 0.08, height: 1.0, tessellation: 8
-    }, scene);
+    const strut = BABYLON.MeshBuilder.CreateCylinder(name + 'Strut', { diameter: 0.08, height: 1.0, tessellation: 8 }, scene);
     strut.position.y = -0.5;
     strut.material = strutMat;
     strut.parent = group;
-
-    // Wheel
-    const wheel = BABYLON.MeshBuilder.CreateCylinder(name + 'Wheel', {
-      diameter: 0.4, height: 0.15, tessellation: 12
-    }, scene);
+    const wheel = BABYLON.MeshBuilder.CreateCylinder(name + 'Wheel', { diameter: 0.4, height: 0.15, tessellation: 12 }, scene);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.y = -1.0;
     wheel.material = wheelMat;
     wheel.parent = group;
-
     return group;
   }
-
   const noseGearGroup = createGearAssembly('noseGear', { x: 0, y: -0.3, z: -3.0 });
   const leftGearGroup = createGearAssembly('leftGear', { x: -1.5, y: -0.3, z: 0 });
   const rightGearGroup = createGearAssembly('rightGear', { x: 1.5, y: -0.3, z: 0 });
 
-  // === Wingtip Transform Nodes for vapor trails ===
+  // === Wingtip Nodes ===
   const leftWingTip = new BABYLON.TransformNode('leftWingTip', scene);
   leftWingTip.position.set(-6, -0.1, -0.5);
   leftWingTip.parent = body;
-
   const rightWingTip = new BABYLON.TransformNode('rightWingTip', scene);
   rightWingTip.position.set(6, -0.1, -0.5);
   rightWingTip.parent = body;
 
-  // === Prop Disc — spinning translucent disc at nose ===
+  // === Prop Disc ===
   const propDisc = BABYLON.MeshBuilder.CreateDisc('propDisc', { radius: 0.8, tessellation: 24 }, scene);
   propDisc.position.set(0, 0, -5.0);
   propDisc.rotation.x = Math.PI / 2;
@@ -3608,27 +3938,493 @@ function createAircraftMesh(scene) {
   propMat.backFaceCulling = false;
   propDisc.material = propMat;
 
-  // Render aircraft on top of terrain (same group as runway)
   root.getChildMeshes().forEach(m => m.renderingGroupId = 1);
-
   root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
 
   return {
     root,
     surfaces: {
-      leftAileron,
-      rightAileron,
-      leftFlap,
-      rightFlap,
-      speedBrakeHinge,
-      elevator: elevatorHinge,
-      rudder: rudderHinge,
-      noseGearGroup,
-      leftGearGroup,
-      rightGearGroup,
-      leftWingTip,
-      rightWingTip,
-      propDisc,
+      leftAileron, rightAileron, leftFlap, rightFlap, speedBrakeHinge,
+      elevator: elevatorHinge, rudder: rudderHinge,
+      noseGearGroup, leftGearGroup, rightGearGroup,
+      leftWingTip, rightWingTip, propDisc,
+    }
+  };
+}
+
+function createFighterMesh(scene) {
+  const root = new BABYLON.TransformNode('aircraft', scene);
+  const body = new BABYLON.TransformNode('body', scene);
+  body.parent = root;
+  body.position.y = 1.4;
+
+  // Materials — military gray
+  const fuselageMat = new BABYLON.PBRMetallicRoughnessMaterial('fuselageMat', scene);
+  fuselageMat.baseColor = BABYLON.Color3.FromHexString('#606870');
+  fuselageMat.metallic = 0.7;
+  fuselageMat.roughness = 0.4;
+
+  const canopyMat = new BABYLON.PBRMetallicRoughnessMaterial('canopyMat', scene);
+  canopyMat.baseColor = BABYLON.Color3.FromHexString('#889ACC');
+  canopyMat.metallic = 0.1;
+  canopyMat.roughness = 0.1;
+  canopyMat.alpha = 0.3;
+
+  const surfaceMat = new BABYLON.PBRMetallicRoughnessMaterial('surfaceMat', scene);
+  surfaceMat.baseColor = BABYLON.Color3.FromHexString('#586068');
+  surfaceMat.metallic = 0.6;
+  surfaceMat.roughness = 0.45;
+
+  const strutMat = new BABYLON.PBRMetallicRoughnessMaterial('strutMat', scene);
+  strutMat.baseColor = BABYLON.Color3.FromHexString('#404040');
+  strutMat.metallic = 0.7;
+  strutMat.roughness = 0.5;
+
+  const wheelMat = new BABYLON.PBRMetallicRoughnessMaterial('wheelMat', scene);
+  wheelMat.baseColor = BABYLON.Color3.FromHexString('#202020');
+  wheelMat.metallic = 0.0;
+  wheelMat.roughness = 0.9;
+
+  // Fuselage — sleeker, longer taper
+  const fusePoints = 24;
+  const fuseLength = 14;
+  const fusePath = [];
+  for (let i = 0; i <= fusePoints; i++) {
+    fusePath.push(new BABYLON.Vector3(0, 0, -fuseLength / 2 + (i / fusePoints) * fuseLength));
+  }
+  const fuselage = BABYLON.MeshBuilder.CreateTube('fuselage', {
+    path: fusePath,
+    radiusFunction: (i) => {
+      const t = i / fusePoints;
+      if (t < 0.12) return 0.05 + 0.45 * Math.sin((t / 0.12) * Math.PI / 2);
+      if (t > 0.8) return 0.5 * (1 - ((t - 0.8) / 0.2) * 0.6);
+      return 0.5;
+    },
+    tessellation: 16, cap: BABYLON.Mesh.CAP_ALL,
+  }, scene);
+  fuselage.material = fuselageMat;
+  fuselage.parent = body;
+
+  // Canopy — bubble canopy
+  const canopy = BABYLON.MeshBuilder.CreateSphere('canopy', { diameter: 1.4, segments: 12 }, scene);
+  canopy.scaling = new BABYLON.Vector3(0.5, 0.4, 1.2);
+  canopy.position.set(0, 0.4, -3.5);
+  canopy.material = canopyMat;
+  canopy.parent = body;
+
+  // Wings — 35deg swept
+  function createSweptWing(name, side) {
+    const sign = side === 'left' ? -1 : 1;
+    const span = 5, rootChord = 2.5, tipChord = 0.6, sweepAngle = 35 * Math.PI / 180;
+    const thickness = 0.06, steps = 12;
+    const topPath = [], botPath = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = sign * t * span;
+      const chord = rootChord + (tipChord - rootChord) * t;
+      const sweepOffset = t * span * Math.tan(sweepAngle);
+      const midZ = sweepOffset - chord / 2;
+      const h = thickness * (1 - 0.6 * t);
+      topPath.push(new BABYLON.Vector3(y, h, midZ));
+      botPath.push(new BABYLON.Vector3(y, -h, midZ));
+    }
+    const wing = BABYLON.MeshBuilder.CreateRibbon(name, {
+      pathArray: [topPath, botPath], closePath: false, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, scene);
+    wing.position.set(0, -0.1, -1.0);
+    wing.material = fuselageMat;
+    wing.parent = body;
+    return wing;
+  }
+  createSweptWing('leftWing', 'left');
+  createSweptWing('rightWing', 'right');
+
+  // Ailerons
+  function createAileron(name, xPos) {
+    const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
+    hinge.position.set(xPos, -0.1, 1.5);
+    hinge.parent = body;
+    const aileron = BABYLON.MeshBuilder.CreateBox(name, { width: 1.8, height: 0.05, depth: 0.35 }, scene);
+    aileron.position.set(0, 0, 0.175);
+    aileron.material = surfaceMat;
+    aileron.parent = hinge;
+    return hinge;
+  }
+  const leftAileron = createAileron('leftAileron', -3.5);
+  const rightAileron = createAileron('rightAileron', 3.5);
+
+  // Flaps (small — fighter has only 2 settings)
+  function createFlap(name, xPos) {
+    const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
+    hinge.position.set(xPos, -0.1, 0.5);
+    hinge.parent = body;
+    const flap = BABYLON.MeshBuilder.CreateBox(name, { width: 1.5, height: 0.05, depth: 0.4 }, scene);
+    flap.position.set(0, 0, 0.2);
+    flap.material = surfaceMat;
+    flap.parent = hinge;
+    return hinge;
+  }
+  const leftFlap = createFlap('leftFlap', -1.8);
+  const rightFlap = createFlap('rightFlap', 1.8);
+
+  // Speed Brake
+  const speedBrakeHinge = new BABYLON.TransformNode('speedBrakeHinge', scene);
+  speedBrakeHinge.position.set(0, 0.5, 2.0);
+  speedBrakeHinge.parent = body;
+  const sbPanel = BABYLON.MeshBuilder.CreateBox('speedBrake', { width: 0.7, height: 0.04, depth: 0.5 }, scene);
+  sbPanel.position.set(0, 0, 0.25);
+  sbPanel.material = surfaceMat;
+  sbPanel.parent = speedBrakeHinge;
+
+  // Single large vertical stabilizer
+  const vStab = BABYLON.MeshBuilder.CreateBox('vStab', { width: 0.08, height: 2.5, depth: 2.0 }, scene);
+  vStab.position.set(0, 1.5, 5.5);
+  vStab.material = fuselageMat;
+  vStab.parent = body;
+
+  // Horizontal stabilizers (small, swept)
+  function createHStab(name, side) {
+    const sign = side === 'left' ? -1 : 1;
+    const topPath = [], botPath = [], steps = 6;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = sign * t * 1.8;
+      const chord = 0.7 + (0.3 - 0.7) * t;
+      const sweepOff = t * 1.8 * Math.tan(30 * Math.PI / 180);
+      const midZ = 5.0 + sweepOff - chord / 2;
+      const h = 0.03 * (1 - 0.3 * t);
+      topPath.push(new BABYLON.Vector3(y, 0.1 + h, midZ));
+      botPath.push(new BABYLON.Vector3(y, 0.1 - h, midZ));
+    }
+    const stab = BABYLON.MeshBuilder.CreateRibbon(name, {
+      pathArray: [topPath, botPath], closePath: false, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, scene);
+    stab.material = fuselageMat;
+    stab.parent = body;
+  }
+  createHStab('hStabLeft', 'left');
+  createHStab('hStabRight', 'right');
+
+  // Elevator
+  const elevatorHinge = new BABYLON.TransformNode('elevatorHinge', scene);
+  elevatorHinge.position.set(0, 0.1, 6.0);
+  elevatorHinge.parent = body;
+  const elevator = BABYLON.MeshBuilder.CreateBox('elevator', { width: 3.2, height: 0.04, depth: 0.3 }, scene);
+  elevator.position.set(0, 0, 0.15);
+  elevator.material = surfaceMat;
+  elevator.parent = elevatorHinge;
+
+  // Rudder
+  const rudderHinge = new BABYLON.TransformNode('rudderHinge', scene);
+  rudderHinge.position.set(0, 1.5, 6.5);
+  rudderHinge.parent = body;
+  const rudder = BABYLON.MeshBuilder.CreateBox('rudder', { width: 0.06, height: 2.2, depth: 0.35 }, scene);
+  rudder.position.set(0, 0, 0.175);
+  rudder.material = surfaceMat;
+  rudder.parent = rudderHinge;
+
+  // Exhaust nozzle at rear (no prop disc)
+  const nozzleMat = new BABYLON.PBRMetallicRoughnessMaterial('nozzleMat', scene);
+  nozzleMat.baseColor = BABYLON.Color3.FromHexString('#303030');
+  nozzleMat.metallic = 0.9;
+  nozzleMat.roughness = 0.3;
+  const nozzle = BABYLON.MeshBuilder.CreateCylinder('nozzle', {
+    diameterTop: 0.5, diameterBottom: 0.6, height: 1.0, tessellation: 16
+  }, scene);
+  nozzle.rotation.x = Math.PI / 2;
+  nozzle.position.set(0, 0, 7.0);
+  nozzle.material = nozzleMat;
+  nozzle.parent = body;
+
+  // Landing Gear
+  function createGearAssembly(name, pos) {
+    const group = new BABYLON.TransformNode(name, scene);
+    group.position.set(pos.x, pos.y, pos.z);
+    group.parent = body;
+    const strut = BABYLON.MeshBuilder.CreateCylinder(name + 'Strut', { diameter: 0.08, height: 1.0, tessellation: 8 }, scene);
+    strut.position.y = -0.5;
+    strut.material = strutMat;
+    strut.parent = group;
+    const wheel = BABYLON.MeshBuilder.CreateCylinder(name + 'Wheel', { diameter: 0.35, height: 0.12, tessellation: 12 }, scene);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.y = -1.0;
+    wheel.material = wheelMat;
+    wheel.parent = group;
+    return group;
+  }
+  const noseGearGroup = createGearAssembly('noseGear', { x: 0, y: -0.3, z: -4.5 });
+  const leftGearGroup = createGearAssembly('leftGear', { x: -1.5, y: -0.3, z: 0 });
+  const rightGearGroup = createGearAssembly('rightGear', { x: 1.5, y: -0.3, z: 0 });
+
+  // Wingtip nodes
+  const leftWingTip = new BABYLON.TransformNode('leftWingTip', scene);
+  leftWingTip.position.set(-5, -0.1, -1.0);
+  leftWingTip.parent = body;
+  const rightWingTip = new BABYLON.TransformNode('rightWingTip', scene);
+  rightWingTip.position.set(5, -0.1, -1.0);
+  rightWingTip.parent = body;
+
+  root.getChildMeshes().forEach(m => m.renderingGroupId = 1);
+  root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
+
+  return {
+    root,
+    surfaces: {
+      leftAileron, rightAileron, leftFlap, rightFlap, speedBrakeHinge,
+      elevator: elevatorHinge, rudder: rudderHinge,
+      noseGearGroup, leftGearGroup, rightGearGroup,
+      leftWingTip, rightWingTip, propDisc: null,
+    }
+  };
+}
+
+function createAirlinerMesh(scene) {
+  const root = new BABYLON.TransformNode('aircraft', scene);
+  const body = new BABYLON.TransformNode('body', scene);
+  body.parent = root;
+  body.position.y = 2.5; // taller gear
+
+  // Materials — white/light gray airliner
+  const fuselageMat = new BABYLON.PBRMetallicRoughnessMaterial('fuselageMat', scene);
+  fuselageMat.baseColor = BABYLON.Color3.FromHexString('#E8E8EC');
+  fuselageMat.metallic = 0.3;
+  fuselageMat.roughness = 0.4;
+
+  const canopyMat = new BABYLON.PBRMetallicRoughnessMaterial('canopyMat', scene);
+  canopyMat.baseColor = BABYLON.Color3.FromHexString('#556688');
+  canopyMat.metallic = 0.1;
+  canopyMat.roughness = 0.1;
+  canopyMat.alpha = 0.4;
+
+  const surfaceMat = new BABYLON.PBRMetallicRoughnessMaterial('surfaceMat', scene);
+  surfaceMat.baseColor = BABYLON.Color3.FromHexString('#D0D4D8');
+  surfaceMat.metallic = 0.4;
+  surfaceMat.roughness = 0.4;
+
+  const strutMat = new BABYLON.PBRMetallicRoughnessMaterial('strutMat', scene);
+  strutMat.baseColor = BABYLON.Color3.FromHexString('#404040');
+  strutMat.metallic = 0.7;
+  strutMat.roughness = 0.5;
+
+  const wheelMat = new BABYLON.PBRMetallicRoughnessMaterial('wheelMat', scene);
+  wheelMat.baseColor = BABYLON.Color3.FromHexString('#202020');
+  wheelMat.metallic = 0.0;
+  wheelMat.roughness = 0.9;
+
+  // Wide fuselage — constant radius, long
+  const fusePoints = 30;
+  const fuseLength = 24;
+  const fuseRadius = 1.8;
+  const fusePath = [];
+  for (let i = 0; i <= fusePoints; i++) {
+    fusePath.push(new BABYLON.Vector3(0, 0, -fuseLength / 2 + (i / fusePoints) * fuseLength));
+  }
+  const fuselage = BABYLON.MeshBuilder.CreateTube('fuselage', {
+    path: fusePath,
+    radiusFunction: (i) => {
+      const t = i / fusePoints;
+      if (t < 0.1) return 0.2 + (fuseRadius - 0.2) * Math.sin((t / 0.1) * Math.PI / 2);
+      if (t > 0.85) return fuseRadius * (1 - ((t - 0.85) / 0.15) * 0.7);
+      return fuseRadius;
+    },
+    tessellation: 20, cap: BABYLON.Mesh.CAP_ALL,
+  }, scene);
+  fuselage.material = fuselageMat;
+  fuselage.parent = body;
+
+  // Cockpit windows
+  const cockpitGlass = BABYLON.MeshBuilder.CreateBox('cockpitGlass', { width: 1.2, height: 0.8, depth: 0.1 }, scene);
+  cockpitGlass.position.set(0, 0.6, -11.8);
+  cockpitGlass.material = canopyMat;
+  cockpitGlass.parent = body;
+
+  // Window dots along fuselage
+  const windowMat = new BABYLON.StandardMaterial('windowMat', scene);
+  windowMat.disableLighting = true;
+  windowMat.emissiveColor = new BABYLON.Color3(0.8, 0.85, 0.95);
+  for (let wz = -9; wz <= 7; wz += 0.8) {
+    for (const side of [-1, 1]) {
+      const win = BABYLON.MeshBuilder.CreateBox('win', { width: 0.08, height: 0.3, depth: 0.4 }, scene);
+      win.position.set(side * 1.78, 0.3, wz);
+      win.material = windowMat;
+      win.parent = body;
+    }
+  }
+
+  // Wings — 25deg swept, high span
+  function createSweptWing(name, side) {
+    const sign = side === 'left' ? -1 : 1;
+    const span = 17, rootChord = 4.0, tipChord = 1.2;
+    const sweepAngle = 25 * Math.PI / 180, thickness = 0.12, steps = 14;
+    const topPath = [], botPath = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = sign * t * span;
+      const chord = rootChord + (tipChord - rootChord) * t;
+      const sweepOffset = t * span * Math.tan(sweepAngle);
+      const midZ = sweepOffset - chord / 2;
+      const h = thickness * (1 - 0.5 * t);
+      topPath.push(new BABYLON.Vector3(y, h, midZ));
+      botPath.push(new BABYLON.Vector3(y, -h, midZ));
+    }
+    const wing = BABYLON.MeshBuilder.CreateRibbon(name, {
+      pathArray: [topPath, botPath], closePath: false, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, scene);
+    wing.position.set(0, -0.5, -2.0);
+    wing.material = fuselageMat;
+    wing.parent = body;
+    return wing;
+  }
+  createSweptWing('leftWing', 'left');
+  createSweptWing('rightWing', 'right');
+
+  // Engine nacelles under wings
+  const nacelMat = new BABYLON.PBRMetallicRoughnessMaterial('nacelMat', scene);
+  nacelMat.baseColor = BABYLON.Color3.FromHexString('#C0C4C8');
+  nacelMat.metallic = 0.5;
+  nacelMat.roughness = 0.4;
+  const intakeMat = new BABYLON.PBRMetallicRoughnessMaterial('intakeMat', scene);
+  intakeMat.baseColor = BABYLON.Color3.FromHexString('#202020');
+  intakeMat.metallic = 0.8;
+  intakeMat.roughness = 0.3;
+  for (const sx of [-6, 6]) {
+    const nacelle = BABYLON.MeshBuilder.CreateCylinder('nacelle', {
+      diameterTop: 1.4, diameterBottom: 1.6, height: 3.5, tessellation: 16
+    }, scene);
+    nacelle.rotation.x = Math.PI / 2;
+    nacelle.position.set(sx, -1.8, 0.5);
+    nacelle.material = nacelMat;
+    nacelle.parent = body;
+    // Intake ring
+    const intake = BABYLON.MeshBuilder.CreateTorus('intake', { diameter: 1.6, thickness: 0.12, tessellation: 20 }, scene);
+    intake.rotation.x = Math.PI / 2;
+    intake.position.set(sx, -1.8, -1.2);
+    intake.material = intakeMat;
+    intake.parent = body;
+  }
+
+  // Ailerons — outer wing
+  function createAileron(name, xPos) {
+    const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
+    hinge.position.set(xPos, -0.5, 3.0);
+    hinge.parent = body;
+    const aileron = BABYLON.MeshBuilder.CreateBox(name, { width: 3.0, height: 0.06, depth: 0.5 }, scene);
+    aileron.position.set(0, 0, 0.25);
+    aileron.material = surfaceMat;
+    aileron.parent = hinge;
+    return hinge;
+  }
+  const leftAileron = createAileron('leftAileron', -13);
+  const rightAileron = createAileron('rightAileron', 13);
+
+  // Flaps — inner wing
+  function createFlap(name, xPos) {
+    const hinge = new BABYLON.TransformNode(name + 'Hinge', scene);
+    hinge.position.set(xPos, -0.5, 1.0);
+    hinge.parent = body;
+    const flap = BABYLON.MeshBuilder.CreateBox(name, { width: 4.0, height: 0.06, depth: 0.7 }, scene);
+    flap.position.set(0, 0, 0.35);
+    flap.material = surfaceMat;
+    flap.parent = hinge;
+    return hinge;
+  }
+  const leftFlap = createFlap('leftFlap', -4);
+  const rightFlap = createFlap('rightFlap', 4);
+
+  // Speed Brake
+  const speedBrakeHinge = new BABYLON.TransformNode('speedBrakeHinge', scene);
+  speedBrakeHinge.position.set(0, 1.8, 4.0);
+  speedBrakeHinge.parent = body;
+  const sbPanel = BABYLON.MeshBuilder.CreateBox('speedBrake', { width: 1.2, height: 0.04, depth: 0.8 }, scene);
+  sbPanel.position.set(0, 0, 0.4);
+  sbPanel.material = surfaceMat;
+  sbPanel.parent = speedBrakeHinge;
+
+  // T-tail: vertical stab
+  const vStab = BABYLON.MeshBuilder.CreateBox('vStab', { width: 0.1, height: 4.0, depth: 2.5 }, scene);
+  vStab.position.set(0, 3.5, 10.0);
+  vStab.material = fuselageMat;
+  vStab.parent = body;
+
+  // Horizontal stab on top of vertical (T-tail)
+  function createHStab(name, side) {
+    const sign = side === 'left' ? -1 : 1;
+    const topPath = [], botPath = [], steps = 6;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const y = sign * t * 3.5;
+      const chord = 1.2 + (0.5 - 1.2) * t;
+      const sweepOff = t * 3.5 * Math.tan(25 * Math.PI / 180);
+      const midZ = 10.0 + sweepOff - chord / 2;
+      const h = 0.04 * (1 - 0.3 * t);
+      topPath.push(new BABYLON.Vector3(y, 5.5 + h, midZ));
+      botPath.push(new BABYLON.Vector3(y, 5.5 - h, midZ));
+    }
+    const stab = BABYLON.MeshBuilder.CreateRibbon(name, {
+      pathArray: [topPath, botPath], closePath: false, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, scene);
+    stab.material = fuselageMat;
+    stab.parent = body;
+  }
+  createHStab('hStabLeft', 'left');
+  createHStab('hStabRight', 'right');
+
+  // Elevator
+  const elevatorHinge = new BABYLON.TransformNode('elevatorHinge', scene);
+  elevatorHinge.position.set(0, 5.5, 11.5);
+  elevatorHinge.parent = body;
+  const elevator = BABYLON.MeshBuilder.CreateBox('elevator', { width: 6.0, height: 0.04, depth: 0.4 }, scene);
+  elevator.position.set(0, 0, 0.2);
+  elevator.material = surfaceMat;
+  elevator.parent = elevatorHinge;
+
+  // Rudder
+  const rudderHinge = new BABYLON.TransformNode('rudderHinge', scene);
+  rudderHinge.position.set(0, 3.5, 11.2);
+  rudderHinge.parent = body;
+  const rudder = BABYLON.MeshBuilder.CreateBox('rudder', { width: 0.06, height: 3.5, depth: 0.4 }, scene);
+  rudder.position.set(0, 0, 0.2);
+  rudder.material = surfaceMat;
+  rudder.parent = rudderHinge;
+
+  // Landing Gear — taller for airliner
+  function createGearAssembly(name, pos) {
+    const group = new BABYLON.TransformNode(name, scene);
+    group.position.set(pos.x, pos.y, pos.z);
+    group.parent = body;
+    const strut = BABYLON.MeshBuilder.CreateCylinder(name + 'Strut', { diameter: 0.12, height: 1.8, tessellation: 8 }, scene);
+    strut.position.y = -0.9;
+    strut.material = strutMat;
+    strut.parent = group;
+    const wheel = BABYLON.MeshBuilder.CreateCylinder(name + 'Wheel', { diameter: 0.6, height: 0.2, tessellation: 12 }, scene);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.y = -1.8;
+    wheel.material = wheelMat;
+    wheel.parent = group;
+    return group;
+  }
+  const noseGearGroup = createGearAssembly('noseGear', { x: 0, y: -0.5, z: -8.0 });
+  const leftGearGroup = createGearAssembly('leftGear', { x: -2.5, y: -0.5, z: 0 });
+  const rightGearGroup = createGearAssembly('rightGear', { x: 2.5, y: -0.5, z: 0 });
+
+  // Wingtip nodes
+  const leftWingTip = new BABYLON.TransformNode('leftWingTip', scene);
+  leftWingTip.position.set(-17, -0.5, -2.0);
+  leftWingTip.parent = body;
+  const rightWingTip = new BABYLON.TransformNode('rightWingTip', scene);
+  rightWingTip.position.set(17, -0.5, -2.0);
+  rightWingTip.parent = body;
+
+  root.getChildMeshes().forEach(m => m.renderingGroupId = 1);
+  root.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1);
+
+  return {
+    root,
+    surfaces: {
+      leftAileron, rightAileron, leftFlap, rightFlap, speedBrakeHinge,
+      elevator: elevatorHinge, rudder: rudderHinge,
+      noseGearGroup, leftGearGroup, rightGearGroup,
+      leftWingTip, rightWingTip, propDisc: null,
     }
   };
 }
@@ -3993,89 +4789,17 @@ class CameraManager {
 const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1;
 
-const model = new FlightModel();
-model.getGroundHeight = getTerrainHeightBounded;
-model.isOverWater = isOverWater;
-const input = new InputHandler();
-const audioManager = new AudioManager();
+let model, input, audioManager, scene, shadowGen, terrainManager, cloudPlane, papiLights;
+let aircraftMesh, surfaces, cameraManager, trailMat;
+let lastTime = null;
+let accumulator = 0;
+let prevPosition, prevOrientation;
+let paused = false;
+let selectedAircraft = 'trainer';
+let selectedEnvironment = 'alpine';
 
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
-const { scene, shadowGen, terrainManager, cloudPlane, papiLights } = createScene(engine);
-const { root: aircraftMesh, surfaces } = createAircraftMesh(scene);
-const cameraManager = new CameraManager(scene);
-scene.activeCamera = cameraManager.camera;
-
-// Rendering Pipeline — bloom, FXAA, tone mapping
-const pipeline = new BABYLON.DefaultRenderingPipeline('pipeline', true, scene, [cameraManager.camera]);
-pipeline.fxaaEnabled = true;
-pipeline.bloomEnabled = true;
-pipeline.bloomThreshold = 0.8;
-pipeline.bloomWeight = 0.3;
-pipeline.bloomKernel = 64;
-pipeline.bloomScale = 0.5;
-pipeline.imageProcessingEnabled = true;
-pipeline.imageProcessing.toneMappingEnabled = true;
-pipeline.imageProcessing.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-pipeline.imageProcessing.exposure = 1.2;
-pipeline.imageProcessing.contrast = 1.1;
-
-// Register aircraft as shadow caster
-aircraftMesh.getChildMeshes().forEach(m => shadowGen.addShadowCaster(m));
-
-// Wingtip vapor trails
-const trailMat = new BABYLON.StandardMaterial('trailMat', scene);
-trailMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
-trailMat.emissiveColor = new BABYLON.Color3(0.8, 0.8, 0.8);
-trailMat.alpha = 0;
-trailMat.backFaceCulling = false;
-
-const leftTrail = new BABYLON.TrailMesh('leftTrail', surfaces.leftWingTip, scene, 0.15, 90, true);
-leftTrail.material = trailMat;
-const rightTrail = new BABYLON.TrailMesh('rightTrail', surfaces.rightWingTip, scene, 0.15, 90, true);
-rightTrail.material = trailMat;
-
-let lastTime = null;
-let accumulator = 0;
-
-// Previous state for interpolation (eliminates fixed-timestep stutter)
-let prevPosition = new Vec3(model.position.x, model.position.y, model.position.z);
-let prevOrientation = model.orientation.clone();
-
-// Restart function
-function restart() {
-  model.reset();
-  model.position.y = getTerrainHeightBounded(0, 0);
-  accumulator = 0;
-  lastTime = null;
-  audioManager.reset();
-  prevPosition.set(0, model.position.y, 0);
-  prevOrientation = new Quat(0, 0, 0, 1);
-  // Reset camera
-  cameraManager.reset();
-  // Restore aircraft visibility (in case we were in cockpit mode)
-  aircraftMesh.getChildMeshes().forEach(m => m.isVisible = true);
-  // Reset gear mesh rotations
-  surfaces.noseGearGroup.rotation.x = 0;
-  surfaces.leftGearGroup.rotation.z = 0;
-  surfaces.rightGearGroup.rotation.z = 0;
-  // Reset control surfaces
-  surfaces.leftAileron.rotation.x = 0;
-  surfaces.rightAileron.rotation.x = 0;
-  surfaces.elevator.rotation.x = 0;
-  surfaces.rudder.rotation.y = 0;
-  // Reset flaps and speed brake
-  surfaces.leftFlap.rotation.x = 0;
-  surfaces.leftFlap._currentAngle = 0;
-  surfaces.rightFlap.rotation.x = 0;
-  surfaces.rightFlap._currentAngle = 0;
-  surfaces.speedBrakeHinge.rotation.x = 0;
-  surfaces.speedBrakeHinge._currentAngle = 0;
-  // Reset prop disc
-  surfaces.propDisc.rotation.z = 0;
-  // Reset vapor trails
-  trailMat.alpha = 0;
-}
 
 // ============================================================
 // Restore Points — save/load flight state (FIFO, max 3 slots)
@@ -4086,7 +4810,6 @@ let _restoreToastTimer = null;
 
 function saveRestorePoint() {
   const snapshot = {
-    // FlightModel state
     position: model.position.clone(),
     velocity: model.velocity.clone(),
     orientation: model.orientation.clone(),
@@ -4106,21 +4829,15 @@ function saveRestorePoint() {
     flapIndex: model.flapIndex,
     flapAngle: model.flapAngle,
     speedBrakeDeployed: model.speedBrakeDeployed,
-    // Mesh animation state
     leftFlapAngle: surfaces.leftFlap._currentAngle || 0,
     rightFlapAngle: surfaces.rightFlap._currentAngle || 0,
     speedBrakeAngle: surfaces.speedBrakeHinge._currentAngle || 0,
-    // Display info
     altFt: Math.round(model.altitude * 3.28084),
     speedKt: Math.round(model.airspeed * 1.94384),
     timestamp: performance.now(),
   };
-
   restorePoints.push(snapshot);
-  if (restorePoints.length > MAX_RESTORE_POINTS) {
-    restorePoints.shift(); // FIFO — drop oldest
-  }
-
+  if (restorePoints.length > MAX_RESTORE_POINTS) restorePoints.shift();
   updateRestorePointUI();
   showRestoreToast('SAVED — slot ' + restorePoints.length);
 }
@@ -4128,8 +4845,6 @@ function saveRestorePoint() {
 function loadRestorePoint(slotIndex) {
   if (slotIndex < 0 || slotIndex >= restorePoints.length) return;
   const snap = restorePoints[slotIndex];
-
-  // Restore FlightModel state
   model.position.copy(snap.position);
   model.velocity.copy(snap.velocity);
   model.orientation = snap.orientation.clone();
@@ -4151,30 +4866,20 @@ function loadRestorePoint(slotIndex) {
   model.flapAngle = snap.flapAngle;
   model.speedBrakeDeployed = snap.speedBrakeDeployed;
   model.wheelBrakeActive = false;
-
-  // Restore mesh animation state
   surfaces.leftFlap._currentAngle = snap.leftFlapAngle;
   surfaces.leftFlap.rotation.x = snap.leftFlapAngle;
   surfaces.rightFlap._currentAngle = snap.rightFlapAngle;
   surfaces.rightFlap.rotation.x = snap.rightFlapAngle;
   surfaces.speedBrakeHinge._currentAngle = snap.speedBrakeAngle;
   surfaces.speedBrakeHinge.rotation.x = snap.speedBrakeAngle;
-
-  // Sync gear meshes
   surfaces.noseGearGroup.rotation.x = model.gearProgress * Math.PI / 2;
   surfaces.leftGearGroup.rotation.z = model.gearProgress * Math.PI / 2;
   surfaces.rightGearGroup.rotation.z = -model.gearProgress * Math.PI / 2;
-
-  // Sync interpolation state
   prevPosition.copy(model.position);
   prevOrientation = model.orientation.clone();
   accumulator = 0;
   lastTime = null;
-
-  // Ensure aircraft is visible
   aircraftMesh.getChildMeshes().forEach(m => m.isVisible = true);
-
-  // Flash the loaded slot
   updateRestorePointUI(slotIndex);
   showRestoreToast('LOADED — slot ' + (slotIndex + 1));
 }
@@ -4202,245 +4907,347 @@ function showRestoreToast(msg) {
   _restoreToastTimer = setTimeout(() => { toast.className = ''; }, 1500);
 }
 
-let paused = false;
+// Restart function (mid-flight, non-crash)
+function restart() {
+  model.reset();
+  model.position.y = getTerrainHeightBounded(0, 0);
+  accumulator = 0;
+  lastTime = null;
+  audioManager.reset();
+  prevPosition.set(0, model.position.y, 0);
+  prevOrientation = new Quat(0, 0, 0, 1);
+  cameraManager.reset();
+  aircraftMesh.getChildMeshes().forEach(m => m.isVisible = true);
+  surfaces.noseGearGroup.rotation.x = 0;
+  surfaces.leftGearGroup.rotation.z = 0;
+  surfaces.rightGearGroup.rotation.z = 0;
+  surfaces.leftAileron.rotation.x = 0;
+  surfaces.rightAileron.rotation.x = 0;
+  surfaces.elevator.rotation.x = 0;
+  surfaces.rudder.rotation.y = 0;
+  surfaces.leftFlap.rotation.x = 0;
+  surfaces.leftFlap._currentAngle = 0;
+  surfaces.rightFlap.rotation.x = 0;
+  surfaces.rightFlap._currentAngle = 0;
+  surfaces.speedBrakeHinge.rotation.x = 0;
+  surfaces.speedBrakeHinge._currentAngle = 0;
+  if (surfaces.propDisc) surfaces.propDisc.rotation.z = 0;
+  trailMat.alpha = 0;
+}
 
 // Initialize flight HUD DOM pools
 initFlightHUD();
 
-// Listen for R key to restart after crash, P/Escape to toggle pause
-window.addEventListener('keydown', (e) => {
-  // Resume AudioContext on first user interaction (browser autoplay policy)
-  if (audioManager.audioCtx.state === 'suspended') audioManager.audioCtx.resume();
+// ============================================================
+// Start Screen Logic
+// ============================================================
+document.querySelectorAll('.aircraft-card').forEach(card => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.aircraft-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedAircraft = card.dataset.aircraft;
+  });
+});
+document.querySelectorAll('.env-card').forEach(card => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.env-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedEnvironment = card.dataset.env;
+  });
+});
 
-  if (e.code === 'KeyR' && model.crashed) {
-    restart();
-    paused = false;
-  }
-  if (e.code === 'KeyP' || e.code === 'Escape') {
-    if (!model.crashed) {
-      paused = !paused;
-      if (!paused) {
-        lastTime = null; // reset dt so no huge jump after unpause
-        audioManager.audioCtx.resume();
-      } else {
-        audioManager.audioCtx.suspend();
+document.getElementById('begin-flight-btn').addEventListener('click', () => {
+  // Set active profile and environment
+  activeProfile = aircraftProfiles[selectedAircraft];
+  activeEnvironment = environmentPresets[selectedEnvironment];
+
+  // Initialize terrain noise from environment
+  initTerrainNoise(activeEnvironment);
+
+  // Hide start screen
+  document.getElementById('start-screen').classList.remove('visible');
+
+  // Initialize simulation
+  initSimulation();
+});
+
+function initSimulation() {
+  model = new FlightModel();
+  model.getGroundHeight = getTerrainHeightBounded;
+  model.isOverWater = isOverWater;
+  input = new InputHandler();
+  audioManager = new AudioManager(activeProfile.type);
+
+  const sceneData = createScene(engine, activeEnvironment);
+  scene = sceneData.scene;
+  shadowGen = sceneData.shadowGen;
+  terrainManager = sceneData.terrainManager;
+  cloudPlane = sceneData.cloudPlane;
+  papiLights = sceneData.papiLights;
+
+  const meshData = createAircraftMesh(scene, selectedAircraft);
+  aircraftMesh = meshData.root;
+  surfaces = meshData.surfaces;
+
+  cameraManager = new CameraManager(scene);
+  scene.activeCamera = cameraManager.camera;
+
+  // Rendering Pipeline
+  const pipeline = new BABYLON.DefaultRenderingPipeline('pipeline', true, scene, [cameraManager.camera]);
+  pipeline.fxaaEnabled = true;
+  pipeline.bloomEnabled = true;
+  pipeline.bloomThreshold = 0.8;
+  pipeline.bloomWeight = 0.3;
+  pipeline.bloomKernel = 64;
+  pipeline.bloomScale = 0.5;
+  pipeline.imageProcessingEnabled = true;
+  pipeline.imageProcessing.toneMappingEnabled = true;
+  pipeline.imageProcessing.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
+  pipeline.imageProcessing.exposure = 1.2;
+  pipeline.imageProcessing.contrast = 1.1;
+
+  // Shadow casters
+  aircraftMesh.getChildMeshes().forEach(m => shadowGen.addShadowCaster(m));
+
+  // Vapor trails
+  trailMat = new BABYLON.StandardMaterial('trailMat', scene);
+  trailMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+  trailMat.emissiveColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+  trailMat.alpha = 0;
+  trailMat.backFaceCulling = false;
+  const leftTrail = new BABYLON.TrailMesh('leftTrail', surfaces.leftWingTip, scene, 0.15, 90, true);
+  leftTrail.material = trailMat;
+  const rightTrail = new BABYLON.TrailMesh('rightTrail', surfaces.rightWingTip, scene, 0.15, 90, true);
+  rightTrail.material = trailMat;
+
+  prevPosition = new Vec3(model.position.x, model.position.y, model.position.z);
+  prevOrientation = model.orientation.clone();
+  lastTime = null;
+  accumulator = 0;
+  paused = false;
+
+  // Clear restore points from previous session
+  restorePoints.length = 0;
+  updateRestorePointUI();
+
+  // Crash overlay — update text for reload
+  document.querySelector('#crash-overlay .crash-subtitle').textContent = 'Press R to return to menu';
+
+  // ============================================================
+  // Input handler for sim keybinds
+  // ============================================================
+  window.addEventListener('keydown', function simKeyHandler(e) {
+    if (!model) return;
+    // Resume AudioContext on first user interaction
+    if (audioManager.audioCtx.state === 'suspended') audioManager.audioCtx.resume();
+
+    // R after crash → reload to start screen
+    if (e.code === 'KeyR' && model.crashed) {
+      location.reload();
+      return;
+    }
+    if (e.code === 'KeyP' || e.code === 'Escape') {
+      if (!model.crashed) {
+        paused = !paused;
+        if (!paused) {
+          lastTime = null;
+          audioManager.audioCtx.resume();
+        } else {
+          audioManager.audioCtx.suspend();
+        }
       }
     }
-  }
-  if (e.code === 'Backquote') {
-    debugPanelVisible = !debugPanelVisible;
-    document.getElementById('hud').className = debugPanelVisible ? 'visible' : '';
-  }
-  // Toggle landing gear (only when airborne)
-  if (e.code === 'KeyG' && !model.crashed && !model.onGround) {
-    model.gearDown = !model.gearDown;
-    audioManager.playGearSound();
-  }
-  // Toggle auto-level
-  if (e.code === 'KeyL' && !model.crashed) {
-    model.autoLevel = !model.autoLevel;
-  }
-  // Cycle camera mode
-  if (e.code === 'KeyC' && !model.crashed) {
-    cameraManager.cycleMode(aircraftMesh);
-  }
-  // Flaps — F cycles through settings, wrapping back to 0
-  if (e.code === 'KeyF' && !model.crashed) {
-    if (e.shiftKey) {
-      model.flapIndex = (model.flapIndex - 1 + model.flapSettings.length) % model.flapSettings.length;
-    } else {
-      model.flapIndex = (model.flapIndex + 1) % model.flapSettings.length;
+    if (e.code === 'Backquote') {
+      debugPanelVisible = !debugPanelVisible;
+      document.getElementById('hud').className = debugPanelVisible ? 'visible' : '';
     }
-    model.flapAngle = model.flapSettings[model.flapIndex];
-    audioManager.playFlapSound();
-  }
-  // Restore points — Q to save, 1/2/3 to load
-  if (e.code === 'KeyQ' && !model.crashed) {
-    saveRestorePoint();
-  }
-  if (e.code === 'Digit1' && restorePoints.length >= 1) {
-    loadRestorePoint(0);
-    paused = false;
-  }
-  if (e.code === 'Digit2' && restorePoints.length >= 2) {
-    loadRestorePoint(1);
-    paused = false;
-  }
-  if (e.code === 'Digit3' && restorePoints.length >= 3) {
-    loadRestorePoint(2);
-    paused = false;
-  }
-  // Speed brake — B toggles in air
-  if (e.code === 'KeyB' && !model.crashed && !model.onGround) {
-    model.speedBrakeDeployed = !model.speedBrakeDeployed;
-    audioManager.playSpeedBrakeSound();
-  }
-  // Audio mute toggle
-  if (e.code === 'KeyM') {
-    audioManager.toggleMute();
-  }
-});
-
-engine.runRenderLoop(() => {
-  // Pause overlay
-  document.getElementById('pause-overlay').className = paused ? 'visible' : '';
-
-  const now = performance.now();
-  if (lastTime === null) { lastTime = now; return; }
-
-  let frameDt = (now - lastTime) / 1000;
-  lastTime = now;
-
-  if (frameDt > MAX_FRAME_DT) frameDt = MAX_FRAME_DT;
-
-  // When paused, still render but skip physics and input
-  if (paused) { scene.render(); return; }
-
-  // 1. Input — skip when crashed
-  if (!model.crashed) {
-    input.update(frameDt, model);
-    // Wheel brake: hold B on ground
-    model.wheelBrakeActive = model.onGround && input.keys['KeyB'];
-  }
-
-  // 1b. Audio update
-  audioManager.update(model);
-
-  // 2. Fixed timestep physics with state snapshots for interpolation
-  accumulator += frameDt;
-  while (accumulator >= FIXED_DT) {
-    prevPosition.set(model.position.x, model.position.y, model.position.z);
-    prevOrientation = model.orientation.clone();
-    model.stepPhysics(FIXED_DT);
-    accumulator -= FIXED_DT;
-  }
-
-  // 3. Interpolate visual mesh between previous and current physics state
-  const alpha = accumulator / FIXED_DT;
-  aircraftMesh.position.set(
-    prevPosition.x + (model.position.x - prevPosition.x) * alpha,
-    prevPosition.y + (model.position.y - prevPosition.y) * alpha,
-    prevPosition.z + (model.position.z - prevPosition.z) * alpha
-  );
-  // Slerp orientation
-  const po = prevOrientation, co = model.orientation;
-  let dot = po.x * co.x + po.y * co.y + po.z * co.z + po.w * co.w;
-  const sign = dot < 0 ? -1 : 1;
-  dot *= sign;
-  // For very small angles, use lerp to avoid division by zero
-  let s0, s1;
-  if (dot > 0.9995) {
-    s0 = 1 - alpha;
-    s1 = alpha * sign;
-  } else {
-    const omega = Math.acos(dot);
-    const sinOmega = Math.sin(omega);
-    s0 = Math.sin((1 - alpha) * omega) / sinOmega;
-    s1 = Math.sin(alpha * omega) / sinOmega * sign;
-  }
-  aircraftMesh.rotationQuaternion.set(
-    s0 * po.x + s1 * co.x,
-    s0 * po.y + s1 * co.y,
-    s0 * po.z + s1 * co.z,
-    s0 * po.w + s1 * co.w
-  );
-
-  // 4. Control surface deflection
-  const AILERON_MAX = 15 * Math.PI / 180;
-  const ELEVATOR_MAX = 20 * Math.PI / 180;
-  const RUDDER_MAX = 20 * Math.PI / 180;
-
-  surfaces.rightAileron.rotation.x = -input.smoothRoll * AILERON_MAX;
-  surfaces.leftAileron.rotation.x = input.smoothRoll * AILERON_MAX;
-  surfaces.elevator.rotation.x = input.smoothPitch * ELEVATOR_MAX;
-  surfaces.rudder.rotation.y = input.smoothYaw * RUDDER_MAX;
-
-  // 5a. Flap animation — smooth rotation toward target angle
-  const flapTargetRad = model.flapAngle * Math.PI / 180;
-  const FLAP_RATE = 1.5; // rad/s
-  [surfaces.leftFlap, surfaces.rightFlap].forEach(flap => {
-    if (flap._currentAngle === undefined) flap._currentAngle = 0;
-    const diff = flapTargetRad - flap._currentAngle;
-    const step = FLAP_RATE * frameDt;
-    if (Math.abs(diff) < step) {
-      flap._currentAngle = flapTargetRad;
-    } else {
-      flap._currentAngle += Math.sign(diff) * step;
+    if (e.code === 'KeyG' && !model.crashed && !model.onGround) {
+      model.gearDown = !model.gearDown;
+      audioManager.playGearSound();
     }
-    flap.rotation.x = flap._currentAngle;
+    if (e.code === 'KeyL' && !model.crashed) {
+      model.autoLevel = !model.autoLevel;
+    }
+    if (e.code === 'KeyC' && !model.crashed) {
+      cameraManager.cycleMode(aircraftMesh);
+    }
+    if (e.code === 'KeyF' && !model.crashed) {
+      if (e.shiftKey) {
+        model.flapIndex = (model.flapIndex - 1 + model.flapSettings.length) % model.flapSettings.length;
+      } else {
+        model.flapIndex = (model.flapIndex + 1) % model.flapSettings.length;
+      }
+      model.flapAngle = model.flapSettings[model.flapIndex];
+      audioManager.playFlapSound();
+    }
+    if (e.code === 'KeyQ' && !model.crashed) saveRestorePoint();
+    if (e.code === 'Digit1' && restorePoints.length >= 1) { loadRestorePoint(0); paused = false; }
+    if (e.code === 'Digit2' && restorePoints.length >= 2) { loadRestorePoint(1); paused = false; }
+    if (e.code === 'Digit3' && restorePoints.length >= 3) { loadRestorePoint(2); paused = false; }
+    if (e.code === 'KeyB' && !model.crashed && !model.onGround) {
+      model.speedBrakeDeployed = !model.speedBrakeDeployed;
+      audioManager.playSpeedBrakeSound();
+    }
+    if (e.code === 'KeyM') audioManager.toggleMute();
   });
 
-  // 5b. Speed brake animation — smooth rotation toward deployed/retracted angle
-  const sbTargetRad = model.speedBrakeDeployed ? -45 * Math.PI / 180 : 0;
-  const SB_RATE = 3.0; // rad/s
-  const sbHinge = surfaces.speedBrakeHinge;
-  if (sbHinge._currentAngle === undefined) sbHinge._currentAngle = 0;
-  const sbDiff = sbTargetRad - sbHinge._currentAngle;
-  const sbStep = SB_RATE * frameDt;
-  if (Math.abs(sbDiff) < sbStep) {
-    sbHinge._currentAngle = sbTargetRad;
-  } else {
-    sbHinge._currentAngle += Math.sign(sbDiff) * sbStep;
-  }
-  sbHinge.rotation.x = sbHinge._currentAngle;
+  // ============================================================
+  // Render Loop
+  // ============================================================
+  engine.runRenderLoop(() => {
+    document.getElementById('pause-overlay').className = paused ? 'visible' : '';
 
-  // 5. Landing gear animation
-  const GEAR_ANIM_SPEED = 0.5; // full travel in 2 seconds
-  if (model.gearDown && model.gearProgress > 0) {
-    model.gearProgress = Math.max(0, model.gearProgress - GEAR_ANIM_SPEED * frameDt);
-  } else if (!model.gearDown && model.gearProgress < 1) {
-    model.gearProgress = Math.min(1, model.gearProgress + GEAR_ANIM_SPEED * frameDt);
-  }
-  surfaces.noseGearGroup.rotation.x = model.gearProgress * Math.PI / 2;
-  surfaces.leftGearGroup.rotation.z = model.gearProgress * Math.PI / 2;
-  surfaces.rightGearGroup.rotation.z = -model.gearProgress * Math.PI / 2;
+    const now = performance.now();
+    if (lastTime === null) { lastTime = now; return; }
 
-  // 6. Prop disc spin
-  surfaces.propDisc.rotation.z += model.throttle * 80 * frameDt;
-  surfaces.propDisc.material.alpha = model.throttle > 0.05 ? 0.12 + model.throttle * 0.08 : 0;
+    let frameDt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (frameDt > MAX_FRAME_DT) frameDt = MAX_FRAME_DT;
 
-  // 7. Wingtip vapor trails — visible during high-G maneuvers
-  const gLoad = model.airspeed > 10 ?
-    Math.abs(model.angularVelocity.x * model.airspeed + model.angularVelocity.z * model.airspeed) / 9.81 : 0;
-  const targetAlpha = gLoad > 2.0 ? Math.min(0.4, (gLoad - 2.0) * 0.15) : 0;
-  trailMat.alpha += (targetAlpha - trailMat.alpha) * 3.0 * frameDt;
+    if (paused) { scene.render(); return; }
 
-  // 8. Terrain chunk loading
-  terrainManager.update(aircraftMesh.position.x, aircraftMesh.position.z);
-
-  // 9. PAPI light update
-  for (const papi of papiLights) {
-    const dx = aircraftMesh.position.x - papi.mesh.position.x;
-    const dy = aircraftMesh.position.y - papi.mesh.position.y;
-    const dz = aircraftMesh.position.z - papi.mesh.position.z;
-    const horizDist = Math.sqrt(dx * dx + dz * dz);
-    const elevAngle = Math.atan2(dy, horizDist) * 180 / Math.PI;
-    if (elevAngle > papi.transitionAngle) {
-      // White — above glide path
-      papi.mat.emissiveColor.set(1, 1, 1);
-    } else {
-      // Red — below glide path
-      papi.mat.emissiveColor.set(1, 0, 0);
+    // Input
+    if (!model.crashed) {
+      input.update(frameDt, model);
+      model.wheelBrakeActive = model.onGround && input.keys['KeyB'];
     }
-  }
 
-  // 10. Boundary warning
-  const distFromOrigin = Math.sqrt(model.position.x ** 2 + model.position.z ** 2);
-  document.getElementById('boundary-warning').className = distFromOrigin > 23000 ? 'visible' : '';
+    // Audio
+    audioManager.update(model);
 
-  // 11. Camera update
-  cameraManager.update(aircraftMesh, model, frameDt, input);
+    // Physics
+    accumulator += frameDt;
+    while (accumulator >= FIXED_DT) {
+      prevPosition.set(model.position.x, model.position.y, model.position.z);
+      prevOrientation = model.orientation.clone();
+      model.stepPhysics(FIXED_DT);
+      accumulator -= FIXED_DT;
+    }
 
-  // 12. Cloud layer follows camera
-  cloudPlane.position.x = cameraManager.camera.position.x;
-  cloudPlane.position.z = cameraManager.camera.position.z;
+    // Interpolation
+    const alpha = accumulator / FIXED_DT;
+    aircraftMesh.position.set(
+      prevPosition.x + (model.position.x - prevPosition.x) * alpha,
+      prevPosition.y + (model.position.y - prevPosition.y) * alpha,
+      prevPosition.z + (model.position.z - prevPosition.z) * alpha
+    );
+    const po = prevOrientation, co = model.orientation;
+    let dot = po.x * co.x + po.y * co.y + po.z * co.z + po.w * co.w;
+    const sign = dot < 0 ? -1 : 1;
+    dot *= sign;
+    let s0, s1;
+    if (dot > 0.9995) {
+      s0 = 1 - alpha;
+      s1 = alpha * sign;
+    } else {
+      const omega = Math.acos(dot);
+      const sinOmega = Math.sin(omega);
+      s0 = Math.sin((1 - alpha) * omega) / sinOmega;
+      s1 = Math.sin(alpha * omega) / sinOmega * sign;
+    }
+    aircraftMesh.rotationQuaternion.set(
+      s0 * po.x + s1 * co.x,
+      s0 * po.y + s1 * co.y,
+      s0 * po.z + s1 * co.z,
+      s0 * po.w + s1 * co.w
+    );
 
-  // 13. HUD
-  updateHUD(model);
+    // Control surfaces
+    const AILERON_MAX = 15 * Math.PI / 180;
+    const ELEVATOR_MAX = 20 * Math.PI / 180;
+    const RUDDER_MAX = 20 * Math.PI / 180;
+    surfaces.rightAileron.rotation.x = -input.smoothRoll * AILERON_MAX;
+    surfaces.leftAileron.rotation.x = input.smoothRoll * AILERON_MAX;
+    surfaces.elevator.rotation.x = input.smoothPitch * ELEVATOR_MAX;
+    surfaces.rudder.rotation.y = input.smoothYaw * RUDDER_MAX;
 
-  // 14. Render
-  scene.render();
-});
+    // Flap animation
+    const flapTargetRad = model.flapAngle * Math.PI / 180;
+    const FLAP_RATE = 1.5;
+    [surfaces.leftFlap, surfaces.rightFlap].forEach(flap => {
+      if (flap._currentAngle === undefined) flap._currentAngle = 0;
+      const diff = flapTargetRad - flap._currentAngle;
+      const step = FLAP_RATE * frameDt;
+      if (Math.abs(diff) < step) {
+        flap._currentAngle = flapTargetRad;
+      } else {
+        flap._currentAngle += Math.sign(diff) * step;
+      }
+      flap.rotation.x = flap._currentAngle;
+    });
+
+    // Speed brake animation
+    const sbTargetRad = model.speedBrakeDeployed ? -45 * Math.PI / 180 : 0;
+    const SB_RATE = 3.0;
+    const sbHinge = surfaces.speedBrakeHinge;
+    if (sbHinge._currentAngle === undefined) sbHinge._currentAngle = 0;
+    const sbDiff = sbTargetRad - sbHinge._currentAngle;
+    const sbStep = SB_RATE * frameDt;
+    if (Math.abs(sbDiff) < sbStep) {
+      sbHinge._currentAngle = sbTargetRad;
+    } else {
+      sbHinge._currentAngle += Math.sign(sbDiff) * sbStep;
+    }
+    sbHinge.rotation.x = sbHinge._currentAngle;
+
+    // Gear animation
+    const GEAR_ANIM_SPEED = 0.5;
+    if (model.gearDown && model.gearProgress > 0) {
+      model.gearProgress = Math.max(0, model.gearProgress - GEAR_ANIM_SPEED * frameDt);
+    } else if (!model.gearDown && model.gearProgress < 1) {
+      model.gearProgress = Math.min(1, model.gearProgress + GEAR_ANIM_SPEED * frameDt);
+    }
+    surfaces.noseGearGroup.rotation.x = model.gearProgress * Math.PI / 2;
+    surfaces.leftGearGroup.rotation.z = model.gearProgress * Math.PI / 2;
+    surfaces.rightGearGroup.rotation.z = -model.gearProgress * Math.PI / 2;
+
+    // Prop disc spin (null-check for jets)
+    if (surfaces.propDisc) {
+      surfaces.propDisc.rotation.z += model.throttle * 80 * frameDt;
+      surfaces.propDisc.material.alpha = model.throttle > 0.05 ? 0.12 + model.throttle * 0.08 : 0;
+    }
+
+    // Vapor trails
+    const gLoad = model.airspeed > 10 ?
+      Math.abs(model.angularVelocity.x * model.airspeed + model.angularVelocity.z * model.airspeed) / 9.81 : 0;
+    const targetAlpha = gLoad > 2.0 ? Math.min(0.4, (gLoad - 2.0) * 0.15) : 0;
+    trailMat.alpha += (targetAlpha - trailMat.alpha) * 3.0 * frameDt;
+
+    // Terrain chunks
+    terrainManager.update(aircraftMesh.position.x, aircraftMesh.position.z);
+
+    // PAPI
+    for (const papi of papiLights) {
+      const dx = aircraftMesh.position.x - papi.mesh.position.x;
+      const dy = aircraftMesh.position.y - papi.mesh.position.y;
+      const dz = aircraftMesh.position.z - papi.mesh.position.z;
+      const horizDist = Math.sqrt(dx * dx + dz * dz);
+      const elevAngle = Math.atan2(dy, horizDist) * 180 / Math.PI;
+      if (elevAngle > papi.transitionAngle) {
+        papi.mat.emissiveColor.set(1, 1, 1);
+      } else {
+        papi.mat.emissiveColor.set(1, 0, 0);
+      }
+    }
+
+    // Boundary warning
+    const distFromOrigin = Math.sqrt(model.position.x ** 2 + model.position.z ** 2);
+    document.getElementById('boundary-warning').className = distFromOrigin > 23000 ? 'visible' : '';
+
+    // Camera
+    cameraManager.update(aircraftMesh, model, frameDt, input);
+
+    // Cloud layer follows camera
+    cloudPlane.position.x = cameraManager.camera.position.x;
+    cloudPlane.position.z = cameraManager.camera.position.z;
+
+    // HUD
+    updateHUD(model);
+
+    // Render
+    scene.render();
+  });
+}
 
 window.addEventListener('resize', () => engine.resize());
 </script>
