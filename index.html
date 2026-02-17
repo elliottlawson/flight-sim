@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Sim — Phase 12</title>
+<title>Flight Sim — Phase 14</title>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 <style>
@@ -435,6 +435,20 @@
     letter-spacing: 2px;
   }
   #boundary-warning.visible { display: block; }
+
+  /* Audio Mute Indicator */
+  #mute-indicator {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #ff9900;
+    letter-spacing: 2px;
+    display: none;
+    z-index: 5;
+  }
+  #mute-indicator.visible { display: block; }
 
   /* Cockpit Frame Vignette */
   #cockpit-frame {
@@ -940,6 +954,9 @@
   <!-- Boundary Warning -->
   <div id="boundary-warning">LEAVING AREA</div>
 
+  <!-- Audio Mute Indicator -->
+  <div id="mute-indicator">MUTED</div>
+
   <!-- Cockpit Frame Vignette -->
   <div id="cockpit-frame"></div>
 
@@ -986,7 +1003,7 @@
 </div>
 
 <div id="controls">
-  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; F Flaps &nbsp;|&nbsp; B Brake &nbsp;|&nbsp; Q Save &nbsp;|&nbsp; 1-3 Load &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; P Pause
+  ↑↓ Pitch &nbsp;|&nbsp; ←→ Roll &nbsp;|&nbsp; A/D Yaw &nbsp;|&nbsp; W/S Throttle &nbsp;|&nbsp; G Gear &nbsp;|&nbsp; F Flaps &nbsp;|&nbsp; B Brake &nbsp;|&nbsp; Q Save &nbsp;|&nbsp; 1-3 Load &nbsp;|&nbsp; L AutoLvl &nbsp;|&nbsp; C Camera &nbsp;|&nbsp; M Mute &nbsp;|&nbsp; P Pause
 </div>
 
 <div id="crash-overlay">
@@ -1140,44 +1157,90 @@ class SimplexNoise {
 // Terrain Height Function — source of truth for physics & visuals
 // ============================================================
 const simplex = new SimplexNoise(42);
-const TERRAIN_SIZE = 10000;
-const TERRAIN_MAX_HEIGHT = 600;
+const simplexRegion = new SimplexNoise(137);
+const simplexWarp = new SimplexNoise(256);
+const simplexRidge = new SimplexNoise(389);
+const TERRAIN_MAX_HEIGHT = 1000;
+const WATER_LEVEL = 5;
 
 function getTerrainHeight(x, z) {
   // Flat airfield zone around the full runway (z=0 to z=-2000)
-  // Use distance to nearest point on runway centerline for a rounded-rectangle shape
   const rwyMinZ = -2200, rwyMaxZ = 200;
   const clampedZ = Math.max(rwyMinZ, Math.min(rwyMaxZ, z));
   const dx = Math.abs(x);
   const dz = Math.abs(z - clampedZ);
   const distToRunway = Math.sqrt(dx * dx + dz * dz);
 
-  // Inner flat zone: 400m from runway centerline — completely flat
-  if (distToRunway < 400) return 0;
-  // Transition zone: 400m to 5000m — very gentle smoothstep to full terrain
+  // Inner flat zone: 400m from runway centerline — flat at WATER_LEVEL
+  if (distToRunway < 400) return WATER_LEVEL;
+  // Transition zone: 400m to 5000m — smoothstep from WATER_LEVEL to full terrain
   let flattenFactor = 1.0;
   if (distToRunway < 5000) {
     const t = (distToRunway - 400) / 4600;
-    flattenFactor = t * t * (3 - 2 * t); // smoothstep
+    flattenFactor = t * t * (3 - 2 * t);
   }
 
-  // 4-octave fBm simplex noise
-  const scale = 1 / 1200; // base frequency
-  let amplitude = 1.0;
-  let frequency = 1.0;
-  let total = 0;
-  let maxAmp = 0;
-  for (let o = 0; o < 4; o++) {
-    total += amplitude * simplex.noise2D(x * scale * frequency, z * scale * frequency);
-    maxAmp += amplitude;
-    amplitude *= 0.5;
-    frequency *= 2.0;
+  // --- Region mask: large-scale biome selection ---
+  let regionRaw = simplexRegion.noise2D(x / 20000, z / 20000) * 0.5 + 0.5; // [0,1]
+  // Force flat near origin (belt-and-suspenders with runway flat zone)
+  const distOrigin = Math.sqrt(x * x + z * z);
+  if (distOrigin < 3000) {
+    regionRaw = 0;
+  } else if (distOrigin < 6000) {
+    const t = (distOrigin - 3000) / 3000;
+    regionRaw *= t * t * (3 - 2 * t);
   }
 
-  // Normalize to [0, 1] then scale
-  const normalized = (total / maxAmp + 1) * 0.5; // [-1,1] -> [0,1]
-  const height = normalized * TERRAIN_MAX_HEIGHT * flattenFactor;
-  return Math.max(0, height);
+  // Map region to max height: plains (0-0.3) → 50m, hills (0.3-0.7) → 50-200m, mountains (0.7-1.0) → 200-1100m
+  let maxHeight;
+  if (regionRaw < 0.3) {
+    maxHeight = 50;
+  } else if (regionRaw < 0.7) {
+    const t = (regionRaw - 0.3) / 0.4;
+    maxHeight = 50 + t * 150;
+  } else {
+    const t = (regionRaw - 0.7) / 0.3;
+    maxHeight = 200 + t * 900;
+  }
+
+  // --- Detail noise: 3-octave fBm for ground texture (always present) ---
+  let detail = 0, detailMax = 0, detailAmp = 1.0, detailFreq = 1.0;
+  const detailScale = 1 / 800;
+  for (let o = 0; o < 3; o++) {
+    detail += detailAmp * simplex.noise2D(x * detailScale * detailFreq, z * detailScale * detailFreq);
+    detailMax += detailAmp;
+    detailAmp *= 0.5;
+    detailFreq *= 2.0;
+  }
+  const detailHeight = ((detail / detailMax) * 0.5 + 0.5) * 30; // 0-30m
+
+  // --- Mountain noise: ridged fBm with domain warping (only in hilly/mountain regions) ---
+  let mountainHeight = 0;
+  if (regionRaw > 0.2) {
+    // Domain warping for organic ridge lines
+    const warpX = simplexWarp.noise2D(x / 3000, z / 3000) * 500;
+    const warpZ = simplexWarp.noise2D(x / 3000 + 100, z / 3000 + 100) * 500;
+    const wx = x + warpX;
+    const wz = z + warpZ;
+
+    // 4-octave ridged fBm
+    let ridge = 0, ridgeMax = 0, ridgeAmp = 1.0, ridgeFreq = 1.0;
+    const ridgeScale = 1 / 2000;
+    for (let o = 0; o < 4; o++) {
+      ridge += ridgeAmp * (1.0 - Math.abs(simplexRidge.noise2D(wx * ridgeScale * ridgeFreq, wz * ridgeScale * ridgeFreq)));
+      ridgeMax += ridgeAmp;
+      ridgeAmp *= 0.5;
+      ridgeFreq *= 2.0;
+    }
+    const ridgeNorm = ridge / ridgeMax; // [0, 1]
+    // Fade in mountain contribution from regionRaw 0.2 to 0.4
+    const mtnBlend = Math.min(1, (regionRaw - 0.2) / 0.2);
+    mountainHeight = ridgeNorm * ridgeNorm * maxHeight * mtnBlend;
+  }
+
+  const rawHeight = detailHeight + mountainHeight;
+  const finalHeight = WATER_LEVEL + (rawHeight - WATER_LEVEL) * flattenFactor;
+  return Math.max(0, finalHeight);
 }
 
 // ============================================================
@@ -1188,13 +1251,349 @@ const OCEAN_BLEND_START = 22000;
 
 function getTerrainHeightBounded(x, z) {
   const dist = Math.sqrt(x * x + z * z);
-  if (dist > WORLD_RADIUS) return 0;
+  if (dist > WORLD_RADIUS) return WATER_LEVEL;
+  const h = getTerrainHeight(x, z);
+  let finalH;
+  if (dist > OCEAN_BLEND_START) {
+    const t = (dist - OCEAN_BLEND_START) / (WORLD_RADIUS - OCEAN_BLEND_START);
+    finalH = h * (1 - t * t * (3 - 2 * t));
+  } else {
+    finalH = h;
+  }
+  return Math.max(finalH, WATER_LEVEL);
+}
+
+function isOverWater(x, z) {
+  const dist = Math.sqrt(x * x + z * z);
+  if (dist > WORLD_RADIUS) return true;
   const h = getTerrainHeight(x, z);
   if (dist > OCEAN_BLEND_START) {
     const t = (dist - OCEAN_BLEND_START) / (WORLD_RADIUS - OCEAN_BLEND_START);
-    return h * (1 - t * t * (3 - 2 * t)); // smoothstep blend to 0
+    return h * (1 - t * t * (3 - 2 * t)) < WATER_LEVEL;
   }
-  return h;
+  return h < WATER_LEVEL;
+}
+
+// ============================================================
+// AudioManager — Procedural sound via Web Audio API
+// ============================================================
+class AudioManager {
+  constructor() {
+    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    this.muted = false;
+    this.wasOnGround = true;
+    this.wasStalling = false;
+    this.stallPulseInterval = null;
+
+    // Master gain
+    this.masterGain = this.audioCtx.createGain();
+    this.masterGain.gain.value = 1.0;
+    this.masterGain.connect(this.audioCtx.destination);
+
+    // Generate reusable white noise buffer (2 seconds)
+    const sampleRate = this.audioCtx.sampleRate;
+    this.noiseBuffer = this.audioCtx.createBuffer(1, sampleRate * 2, sampleRate);
+    const data = this.noiseBuffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    this._initEngine();
+    this._initWind();
+    this._initStall();
+  }
+
+  _initEngine() {
+    const ctx = this.audioCtx;
+
+    // Engine gain node
+    this.engineGain = ctx.createGain();
+    this.engineGain.gain.value = 0.15;
+    this.engineGain.connect(this.masterGain);
+
+    // Prop modulation — amplitude modulates the engine signal
+    this.propModGain = ctx.createGain();
+    this.propModGain.gain.value = 1.0;
+    this.propModGain.connect(this.engineGain);
+
+    this.propMod = ctx.createOscillator();
+    this.propMod.type = 'sine';
+    this.propMod.frequency.value = 15;
+    // Connect LFO to modulate propModGain's gain param
+    this.propModDepth = ctx.createGain();
+    this.propModDepth.gain.value = 0.3;
+    this.propMod.connect(this.propModDepth);
+    this.propModDepth.connect(this.propModGain.gain);
+    this.propMod.start();
+
+    // Base oscillator — sawtooth
+    this.baseOsc = ctx.createOscillator();
+    this.baseOsc.type = 'sawtooth';
+    this.baseOsc.frequency.value = 80;
+    this.baseGain = ctx.createGain();
+    this.baseGain.gain.value = 0.5;
+    this.baseOsc.connect(this.baseGain);
+    this.baseGain.connect(this.propModGain);
+    this.baseOsc.start();
+
+    // Harmonic 2 — 2x frequency, -12dB
+    this.harm2 = ctx.createOscillator();
+    this.harm2.type = 'sawtooth';
+    this.harm2.frequency.value = 160;
+    this.harm2Gain = ctx.createGain();
+    this.harm2Gain.gain.value = 0.25; // ~-12dB relative to 1.0
+    this.harm2.connect(this.harm2Gain);
+    this.harm2Gain.connect(this.propModGain);
+    this.harm2.start();
+
+    // Harmonic 3 — 3x frequency, -18dB
+    this.harm3 = ctx.createOscillator();
+    this.harm3.type = 'sawtooth';
+    this.harm3.frequency.value = 240;
+    this.harm3Gain = ctx.createGain();
+    this.harm3Gain.gain.value = 0.125; // ~-18dB relative to 1.0
+    this.harm3.connect(this.harm3Gain);
+    this.harm3Gain.connect(this.propModGain);
+    this.harm3.start();
+
+    // Engine noise — white noise through bandpass
+    this.engineNoise = ctx.createBufferSource();
+    this.engineNoise.buffer = this.noiseBuffer;
+    this.engineNoise.loop = true;
+    this.engineNoiseBandpass = ctx.createBiquadFilter();
+    this.engineNoiseBandpass.type = 'bandpass';
+    this.engineNoiseBandpass.frequency.value = 300;
+    this.engineNoiseBandpass.Q.value = 1.5;
+    this.engineNoiseGain = ctx.createGain();
+    this.engineNoiseGain.gain.value = 0.15;
+    this.engineNoise.connect(this.engineNoiseBandpass);
+    this.engineNoiseBandpass.connect(this.engineNoiseGain);
+    this.engineNoiseGain.connect(this.propModGain);
+    this.engineNoise.start();
+  }
+
+  _initWind() {
+    const ctx = this.audioCtx;
+
+    this.windNoise = ctx.createBufferSource();
+    this.windNoise.buffer = this.noiseBuffer;
+    this.windNoise.loop = true;
+    this.windFilter = ctx.createBiquadFilter();
+    this.windFilter.type = 'lowpass';
+    this.windFilter.frequency.value = 200;
+    this.windFilter.Q.value = 0.7;
+    this.windGain = ctx.createGain();
+    this.windGain.gain.value = 0;
+    this.windNoise.connect(this.windFilter);
+    this.windFilter.connect(this.windGain);
+    this.windGain.connect(this.masterGain);
+    this.windNoise.start();
+  }
+
+  _initStall() {
+    const ctx = this.audioCtx;
+
+    this.stallOsc = ctx.createOscillator();
+    this.stallOsc.type = 'square';
+    this.stallOsc.frequency.value = 800;
+    this.stallGain = ctx.createGain();
+    this.stallGain.gain.value = 0;
+    this.stallOsc.connect(this.stallGain);
+    this.stallGain.connect(this.masterGain);
+    this.stallOsc.start();
+  }
+
+  update(model) {
+    if (this.audioCtx.state !== 'running') return;
+
+    const now = this.audioCtx.currentTime;
+    const tau = 0.05; // smoothing time constant
+
+    // --- Engine ---
+    const throttle = model.throttle;
+    const airspeed = model.airspeed;
+
+    const baseFreq = 80 + throttle * 80 + airspeed * 0.1;
+    this.baseOsc.frequency.setTargetAtTime(baseFreq, now, tau);
+    this.harm2.frequency.setTargetAtTime(baseFreq * 2, now, tau);
+    this.harm3.frequency.setTargetAtTime(baseFreq * 3, now, tau);
+
+    // Prop modulation rate scales with throttle
+    this.propMod.frequency.setTargetAtTime(15 + throttle * 10, now, tau);
+
+    // Engine noise bandpass center
+    this.engineNoiseBandpass.frequency.setTargetAtTime(300 + throttle * 500, now, tau);
+
+    // Engine volume
+    const onGroundBoost = model.onGround ? 1.15 : 1.0;
+    this.engineGain.gain.setTargetAtTime((0.15 + throttle * 0.2) * onGroundBoost, now, tau);
+
+    // Ground harmonic boost (+3dB ≈ *1.4)
+    const harmBoost = model.onGround ? 1.4 : 1.0;
+    this.harm2Gain.gain.setTargetAtTime(0.25 * harmBoost, now, tau);
+    this.harm3Gain.gain.setTargetAtTime(0.125 * harmBoost, now, tau);
+
+    // --- Wind ---
+    const windCutoff = 200 + Math.min(airspeed, 150) * 20;
+    const sbBoost = model.speedBrakeDeployed ? 500 : 0;
+    this.windFilter.frequency.setTargetAtTime(windCutoff + sbBoost, now, tau);
+
+    let windVol = Math.min(airspeed / 120, 1.0) * 0.25;
+    if (model.speedBrakeDeployed) windVol *= 1.4;
+    this.windGain.gain.setTargetAtTime(windVol, now, tau);
+
+    // --- Stall warning ---
+    if (model.isStalling && !this.wasStalling) {
+      // Start pulsing
+      this._startStallPulse();
+    } else if (!model.isStalling && this.wasStalling) {
+      // Stop pulsing
+      this._stopStallPulse();
+    }
+    this.wasStalling = model.isStalling;
+
+    // --- Touchdown detection ---
+    if (!this.wasOnGround && model.onGround && !model.crashed) {
+      const descentRate = Math.abs(model.velocity.y);
+      this.playTouchdownSound(descentRate);
+    }
+    this.wasOnGround = model.onGround;
+  }
+
+  _startStallPulse() {
+    if (this.stallPulseInterval) return;
+    let on = true;
+    this.stallGain.gain.value = 0.4;
+    this.stallPulseInterval = setInterval(() => {
+      on = !on;
+      this.stallGain.gain.value = on ? 0.4 : 0;
+    }, 100); // 5Hz = 200ms period, toggle every 100ms
+  }
+
+  _stopStallPulse() {
+    if (this.stallPulseInterval) {
+      clearInterval(this.stallPulseInterval);
+      this.stallPulseInterval = null;
+    }
+    this.stallGain.gain.value = 0;
+  }
+
+  playGearSound() {
+    const ctx = this.audioCtx;
+    if (ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+
+    // Hydraulic whine — sine sweep 300→800Hz over 1.5s
+    const whine = ctx.createOscillator();
+    whine.type = 'sine';
+    whine.frequency.setValueAtTime(300, now);
+    whine.frequency.linearRampToValueAtTime(800, now + 1.5);
+    const whineGain = ctx.createGain();
+    whineGain.gain.setValueAtTime(0.15, now);
+    whineGain.gain.linearRampToValueAtTime(0.15, now + 1.3);
+    whineGain.gain.linearRampToValueAtTime(0, now + 1.5);
+    whine.connect(whineGain);
+    whineGain.connect(this.masterGain);
+    whine.start(now);
+    whine.stop(now + 1.5);
+
+    // Thud — low sine at 80Hz, fast decay
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.value = 80;
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.3, now + 1.5);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 1.7);
+    thud.connect(thudGain);
+    thudGain.connect(this.masterGain);
+    thud.start(now + 1.5);
+    thud.stop(now + 2.0);
+  }
+
+  playFlapSound() {
+    const ctx = this.audioCtx;
+    if (ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+
+    // Brief motor whine — sine 400→600Hz over 0.3s
+    const motor = ctx.createOscillator();
+    motor.type = 'sine';
+    motor.frequency.setValueAtTime(400, now);
+    motor.frequency.linearRampToValueAtTime(600, now + 0.3);
+    const motorGain = ctx.createGain();
+    motorGain.gain.setValueAtTime(0, now);
+    motorGain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+    motorGain.gain.linearRampToValueAtTime(0.2, now + 0.3);
+    motorGain.gain.linearRampToValueAtTime(0, now + 0.5);
+    motor.connect(motorGain);
+    motorGain.connect(this.masterGain);
+    motor.start(now);
+    motor.stop(now + 0.5);
+  }
+
+  playSpeedBrakeSound() {
+    const ctx = this.audioCtx;
+    if (ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+
+    // Short thud — filtered noise burst
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 150;
+    bp.Q.value = 2;
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.3, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    noise.connect(bp);
+    bp.connect(thudGain);
+    thudGain.connect(this.masterGain);
+    noise.start(now);
+    noise.stop(now + 0.2);
+  }
+
+  playTouchdownSound(descentRate) {
+    const ctx = this.audioCtx;
+    if (ctx.state !== 'running') return;
+    const now = ctx.currentTime;
+
+    // Tire screech — high-pass filtered noise
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2000;
+    const screechGain = ctx.createGain();
+    const vol = Math.min(descentRate / 5, 1) * 0.4;
+    screechGain.gain.setValueAtTime(vol, now);
+    screechGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    noise.connect(hp);
+    hp.connect(screechGain);
+    screechGain.connect(this.masterGain);
+    noise.start(now);
+    noise.stop(now + 0.3);
+  }
+
+  toggleMute() {
+    this.muted = !this.muted;
+    this.masterGain.gain.setTargetAtTime(this.muted ? 0 : 1, this.audioCtx.currentTime, 0.02);
+    document.getElementById('mute-indicator').className = this.muted ? 'visible' : '';
+  }
+
+  reset() {
+    this._stopStallPulse();
+    this.wasOnGround = true;
+    this.wasStalling = false;
+    // Reset continuous params to idle
+    const now = this.audioCtx.currentTime;
+    this.baseOsc.frequency.setTargetAtTime(80, now, 0.02);
+    this.harm2.frequency.setTargetAtTime(160, now, 0.02);
+    this.harm3.frequency.setTargetAtTime(240, now, 0.02);
+    this.engineGain.gain.setTargetAtTime(0.15, now, 0.02);
+    this.windGain.gain.setTargetAtTime(0, now, 0.02);
+    this.windFilter.frequency.setTargetAtTime(200, now, 0.02);
+  }
 }
 
 // ============================================================
@@ -1210,7 +1609,7 @@ function generateTerrainTexture(scene, worldX, worldZ, chunkSize, texSize) {
       const wx = worldX + (px / (texSize - 1)) * chunkSize;
       const wz = worldZ + (py / (texSize - 1)) * chunkSize;
       const h = getTerrainHeightBounded(wx, wz);
-      const t = h / TERRAIN_MAX_HEIGHT;
+      const rawH = getTerrainHeight(wx, wz);
 
       const hpx = getTerrainHeightBounded(wx + sampleD, wz);
       const hmx = getTerrainHeightBounded(wx - sampleD, wz);
@@ -1223,30 +1622,70 @@ function generateTerrainTexture(scene, worldX, worldZ, chunkSize, texSize) {
       const noiseVal = simplex.noise2D(wx * 0.01, wz * 0.01) * 0.5 + 0.5;
       const fineNoise = simplex.noise2D(wx * 0.05, wz * 0.05) * 15;
 
-      const grassR = 65 + noiseVal * 30 + fineNoise;
-      const grassG = 110 + noiseVal * 40 + fineNoise;
-      const grassB = 35 + noiseVal * 15;
-      const rockR = 120 + noiseVal * 35 + fineNoise;
-      const rockG = 105 + noiseVal * 25 + fineNoise;
-      const rockB = 85 + noiseVal * 20;
-      const snowR = 230 + noiseVal * 25;
-      const snowG = 235 + noiseVal * 20;
-      const snowB = 240 + noiseVal * 15;
+      // Base: bright green grass (low elevation, flat)
+      let r = 65 + noiseVal * 30 + fineNoise;
+      let g = 110 + noiseVal * 40 + fineNoise;
+      let b = 35 + noiseVal * 15;
 
-      const slopeFactor = Math.max(0, Math.min(1, (slopeAngle - 25) / 10));
-      const elevRockFactor = Math.max(0, Math.min(1, (t - 0.4) / 0.2));
-      const rockBlend = Math.max(slopeFactor, elevRockFactor * 0.6);
+      // Forest: dark green on low-elevation moderate slopes (15-30°)
+      const forestBlend = Math.max(0, Math.min(1, (slopeAngle - 15) / 15)) * Math.max(0, 1 - h / 200);
+      if (forestBlend > 0) {
+        const fR = 30 + noiseVal * 20 + fineNoise;
+        const fG = 65 + noiseVal * 25 + fineNoise;
+        const fB = 20 + noiseVal * 10;
+        r += (fR - r) * forestBlend;
+        g += (fG - g) * forestBlend;
+        b += (fB - b) * forestBlend;
+      }
 
-      const snowElevFactor = Math.max(0, Math.min(1, (h - 400) / 100));
+      // Alpine meadow: tan/light brown at mid elevation (150-700m), flat areas
+      const alpineElev = Math.max(0, Math.min(1, (h - 150) / 100)) * Math.max(0, 1 - Math.max(0, (h - 700) / 100));
+      const alpineSlope = Math.max(0, 1 - slopeAngle / 25);
+      const alpineBlend = alpineElev * alpineSlope;
+      if (alpineBlend > 0) {
+        const aR = 160 + noiseVal * 30 + fineNoise;
+        const aG = 140 + noiseVal * 25 + fineNoise;
+        const aB = 90 + noiseVal * 20;
+        r += (aR - r) * alpineBlend;
+        g += (aG - g) * alpineBlend;
+        b += (aB - b) * alpineBlend;
+      }
+
+      // Rock: gray-brown on steep slopes (30°+) or very steep (35°+) at any elevation
+      const steepRock = Math.max(0, Math.min(1, (slopeAngle - 30) / 10));
+      const vSteepRock = Math.max(0, Math.min(1, (slopeAngle - 35) / 5));
+      const elevRock = Math.max(0, Math.min(1, (h - 300) / 200)) * steepRock;
+      const rockBlend = Math.max(elevRock, vSteepRock);
+      if (rockBlend > 0) {
+        const rR = 120 + noiseVal * 35 + fineNoise;
+        const rG = 105 + noiseVal * 25 + fineNoise;
+        const rB = 85 + noiseVal * 20;
+        r += (rR - r) * rockBlend;
+        g += (rG - g) * rockBlend;
+        b += (rB - b) * rockBlend;
+      }
+
+      // Snow: white at high elevation (700m+), stronger on flat surfaces
+      const snowElev = Math.max(0, Math.min(1, (h - 700) / 150));
       const snowSlopePenalty = Math.max(0, Math.min(1, (slopeAngle - 20) / 15));
-      const snowBlend = snowElevFactor * (1 - snowSlopePenalty);
+      const snowBlend = snowElev * (1 - snowSlopePenalty * 0.8);
+      if (snowBlend > 0) {
+        const sR = 230 + noiseVal * 25;
+        const sG = 235 + noiseVal * 20;
+        const sB = 240 + noiseVal * 15;
+        r += (sR - r) * snowBlend;
+        g += (sG - g) * snowBlend;
+        b += (sB - b) * snowBlend;
+      }
 
-      let r = grassR + (rockR - grassR) * rockBlend;
-      let g = grassG + (rockG - grassG) * rockBlend;
-      let b = grassB + (rockB - grassB) * rockBlend;
-      r = r + (snowR - r) * snowBlend;
-      g = g + (snowG - g) * snowBlend;
-      b = b + (snowB - b) * snowBlend;
+      // Water tint: blue-green for areas below WATER_LEVEL
+      if (rawH < WATER_LEVEL) {
+        const waterDepth = Math.min(1, (WATER_LEVEL - rawH) / 10);
+        const wR = 40, wG = 90, wB = 110;
+        r += (wR - r) * waterDepth;
+        g += (wG - g) * waterDepth;
+        b += (wB - b) * waterDepth;
+      }
 
       const idx = (py * texSize + px) * 4;
       imgData.data[idx] = Math.max(0, Math.min(255, r | 0));
@@ -1354,8 +1793,9 @@ class FlightModel {
     this.wheelBrakeFriction = activeProfile.wheelBrakeFriction;
     this.approachSpeeds = activeProfile.approachSpeeds;
 
-    // Terrain callback — injected externally
+    // Terrain callbacks — injected externally
     this.getGroundHeight = (x, z) => 0;
+    this.isOverWater = (x, z) => false;
 
     // --- State ---
     this.reset();
@@ -1651,8 +2091,15 @@ class FlightModel {
       const pitchDeg = Math.asin(Math.max(-1, Math.min(1, fwd.y))) * 180 / Math.PI;
       const rollDeg = Math.atan2(-rt.dot(new Vec3(0, 1, 0)), u.dot(new Vec3(0, 1, 0))) * 180 / Math.PI;
 
+      // Water contact is always fatal
+      if (this.isOverWater(this.position.x, this.position.z)) {
+        this.crashed = true;
+        this.position.y = this.groundHeight;
+        this.velocity.set(0, 0, 0);
+        this.angularVelocity.set(0, 0, 0);
+      }
       // Gear-up landing is always a crash
-      if (this.gearProgress > 0.5) {
+      else if (this.gearProgress > 0.5) {
         this.crashed = true;
         this.position.y = this.groundHeight;
         this.velocity.set(0, 0, 0);
@@ -2304,17 +2751,18 @@ class TerrainManager {
       { maxDist: 14000, subs: 12, texSize: 32 }
     ];
 
-    // Ocean plane
+    // Ocean plane (deep ocean beyond world edge)
     const ocean = BABYLON.MeshBuilder.CreateGround('ocean', {
       width: 60000, height: 60000, subdivisions: 1
     }, scene);
-    ocean.position.y = -5;
+    ocean.position.y = -2;
     const oceanMat = new BABYLON.PBRMetallicRoughnessMaterial('oceanMat', scene);
     oceanMat.baseColor = new BABYLON.Color3(0.05, 0.12, 0.2);
     oceanMat.metallic = 0.0;
     oceanMat.roughness = 0.7;
     ocean.material = oceanMat;
     this.ocean = ocean;
+
   }
 
   _getLOD(dist) {
@@ -2513,7 +2961,7 @@ function createScene(engine) {
 
   // Runway — 45m wide, 2000m long, along -Z axis
   const runway = BABYLON.MeshBuilder.CreateGround('runway', { width: 45, height: 2000 }, scene);
-  runway.position.y = 0.05; // above ground to prevent z-fighting
+  runway.position.y = WATER_LEVEL + 0.05; // above ground to prevent z-fighting
   runway.position.z = -1000; // spans z=0 to z=-2000
   runway.renderingGroupId = 1;
 
@@ -2575,7 +3023,7 @@ function createScene(engine) {
   const papiX = -30;  // left of runway
   for (let i = 0; i < 4; i++) {
     const sphere = BABYLON.MeshBuilder.CreateSphere('papi' + i, { diameter: 0.6, segments: 8 }, scene);
-    sphere.position.set(papiX, 0.5, papiZ + i * 2);
+    sphere.position.set(papiX, WATER_LEVEL + 0.5, papiZ + i * 2);
     const mat = new BABYLON.StandardMaterial('papiMat' + i, scene);
     mat.disableLighting = true;
     mat.emissiveColor = new BABYLON.Color3(1, 1, 1); // will be updated each frame
@@ -2664,24 +3112,24 @@ function createScene(engine) {
 
   // Main parallel taxiway: 15m wide, 2000m long, offset 75m east
   const taxiway = BABYLON.MeshBuilder.CreateGround('taxiway', { width: 15, height: 2000 }, scene);
-  taxiway.position.set(75, 0.04, -1000);
+  taxiway.position.set(75, WATER_LEVEL + 0.04, -1000);
   taxiway.material = taxiwayTexMat;
   taxiway.renderingGroupId = 1;
 
   // Connector taxiways at each end (perpendicular strips)
   const northConn = BABYLON.MeshBuilder.CreateGround('northConn', { width: 75, height: 15 }, scene);
-  northConn.position.set(37.5, 0.04, 0);
+  northConn.position.set(37.5, WATER_LEVEL + 0.04, 0);
   northConn.material = taxiwayPaveMat;
   northConn.renderingGroupId = 1;
 
   const southConn = BABYLON.MeshBuilder.CreateGround('southConn', { width: 75, height: 15 }, scene);
-  southConn.position.set(37.5, 0.04, -2000);
+  southConn.position.set(37.5, WATER_LEVEL + 0.04, -2000);
   southConn.material = taxiwayPaveMat;
   southConn.renderingGroupId = 1;
 
   // --- Apron / Parking Area ---
   const apron = BABYLON.MeshBuilder.CreateGround('apron', { width: 45, height: 80 }, scene);
-  apron.position.set(105, 0.04, -1000);
+  apron.position.set(105, WATER_LEVEL + 0.04, -1000);
   apron.material = taxiwayPaveMat;
   apron.renderingGroupId = 1;
 
@@ -2693,8 +3141,8 @@ function createScene(engine) {
   edgeLightSphere.material = edgeLightMat;
   edgeLightSphere.renderingGroupId = 1;
   for (let z = 0; z >= -2000; z -= 60) {
-    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-22.5, 0.5, z));
-    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(22.5, 0.5, z));
+    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-22.5, WATER_LEVEL + 0.5, z));
+    edgeLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(22.5, WATER_LEVEL + 0.5, z));
   }
 
   // --- Threshold Lights ---
@@ -2706,7 +3154,7 @@ function createScene(engine) {
   greenLightSphere.material = greenLightMat;
   greenLightSphere.renderingGroupId = 1;
   for (let i = 0; i < 10; i++) {
-    greenLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, 0.4, 1));
+    greenLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, WATER_LEVEL + 0.4, 1));
   }
 
   // Red at departure end (z=-2000)
@@ -2717,7 +3165,7 @@ function createScene(engine) {
   redLightSphere.material = redLightMat;
   redLightSphere.renderingGroupId = 1;
   for (let i = 0; i < 10; i++) {
-    redLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, 0.4, -2001));
+    redLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(-20 + i * 4.5, WATER_LEVEL + 0.4, -2001));
   }
 
   // --- Taxiway Edge Lights (blue) ---
@@ -2728,21 +3176,21 @@ function createScene(engine) {
   blueLightSphere.material = blueLightMat;
   blueLightSphere.renderingGroupId = 1;
   for (let z = 0; z >= -2000; z -= 60) {
-    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(67.5, 0.3, z));
-    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(82.5, 0.3, z));
+    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(67.5, WATER_LEVEL + 0.3, z));
+    blueLightSphere.thinInstanceAdd(BABYLON.Matrix.Translation(82.5, WATER_LEVEL + 0.3, z));
   }
 
   // --- Control Tower ---
   const towerX = 150, towerZ = -1000;
   const towerBase = BABYLON.MeshBuilder.CreateBox('towerBase', { width: 10, height: 20, depth: 10 }, scene);
-  towerBase.position.set(towerX, 10, towerZ);
+  towerBase.position.set(towerX, WATER_LEVEL + 10, towerZ);
   towerBase.material = concreteMat;
   towerBase.renderingGroupId = 1;
   towerBase.receiveShadows = true;
   shadowGen.addShadowCaster(towerBase);
 
   const towerCab = BABYLON.MeshBuilder.CreateBox('towerCab', { width: 12, height: 4, depth: 12 }, scene);
-  towerCab.position.set(towerX, 22, towerZ);
+  towerCab.position.set(towerX, WATER_LEVEL + 22, towerZ);
   towerCab.material = concreteMat;
   towerCab.renderingGroupId = 1;
   towerCab.receiveShadows = true;
@@ -2756,7 +3204,7 @@ function createScene(engine) {
     { w: 0.3, h: 2.5, d: 11, x: towerX + 6.15, z: towerZ },
   ].forEach((win, i) => {
     const m = BABYLON.MeshBuilder.CreateBox('towerWin' + i, { width: win.w, height: win.h, depth: win.d }, scene);
-    m.position.set(win.x, 22, win.z);
+    m.position.set(win.x, WATER_LEVEL + 22, win.z);
     m.material = towerGlassMat;
     m.renderingGroupId = 1;
   });
@@ -2769,7 +3217,7 @@ function createScene(engine) {
   ];
   hangarConfigs.forEach((cfg, i) => {
     const hg = BABYLON.MeshBuilder.CreateBox('hangar' + i, { width: cfg.w, height: cfg.h, depth: cfg.d }, scene);
-    hg.position.set(cfg.x, cfg.h / 2, cfg.z);
+    hg.position.set(cfg.x, WATER_LEVEL + cfg.h / 2, cfg.z);
     hg.material = hangarMat;
     hg.renderingGroupId = 1;
     hg.receiveShadows = true;
@@ -2778,7 +3226,7 @@ function createScene(engine) {
       const door = BABYLON.MeshBuilder.CreateBox('hangarDoor' + i, {
         width: 0.3, height: cfg.h * 0.75, depth: cfg.d * 0.6
       }, scene);
-      door.position.set(cfg.x - cfg.w / 2 - 0.15, cfg.h * 0.375, cfg.z);
+      door.position.set(cfg.x - cfg.w / 2 - 0.15, WATER_LEVEL + cfg.h * 0.375, cfg.z);
       door.material = darkOpeningMat;
       door.renderingGroupId = 1;
     }
@@ -2787,7 +3235,7 @@ function createScene(engine) {
   // --- Terminal Building ---
   const termX = 135, termZ = -1000;
   const terminal = BABYLON.MeshBuilder.CreateBox('terminal', { width: 20, height: 8, depth: 60 }, scene);
-  terminal.position.set(termX, 4, termZ);
+  terminal.position.set(termX, WATER_LEVEL + 4, termZ);
   terminal.material = concreteMat;
   terminal.renderingGroupId = 1;
   terminal.receiveShadows = true;
@@ -2797,14 +3245,14 @@ function createScene(engine) {
   for (let wi = 0; wi < 5; wi++) {
     const wz = termZ - 24 + wi * 12;
     const twin = BABYLON.MeshBuilder.CreateBox('termWin' + wi, { width: 0.3, height: 4, depth: 8 }, scene);
-    twin.position.set(termX - 10.15, 4, wz);
+    twin.position.set(termX - 10.15, WATER_LEVEL + 4, wz);
     twin.material = towerGlassMat;
     twin.renderingGroupId = 1;
   }
 
   // Covered overhang on west side
   const overhang = BABYLON.MeshBuilder.CreateBox('overhang', { width: 5, height: 0.3, depth: 50 }, scene);
-  overhang.position.set(termX - 12.5, 7.85, termZ);
+  overhang.position.set(termX - 12.5, WATER_LEVEL + 7.85, termZ);
   overhang.material = concreteMat;
   overhang.renderingGroupId = 1;
 
@@ -2814,7 +3262,7 @@ function createScene(engine) {
     const pillar = BABYLON.MeshBuilder.CreateCylinder('pillar' + pi, {
       diameter: 0.3, height: 7.85, tessellation: 8
     }, scene);
-    pillar.position.set(termX - 14.5, 3.925, pz);
+    pillar.position.set(termX - 14.5, WATER_LEVEL + 3.925, pz);
     pillar.material = concreteMat;
     pillar.renderingGroupId = 1;
   }
@@ -2828,7 +3276,7 @@ function createScene(engine) {
   const wsPole = BABYLON.MeshBuilder.CreateCylinder('wsPole', {
     diameter: 0.15, height: 6, tessellation: 8
   }, scene);
-  wsPole.position.set(wsX, 3, wsZ);
+  wsPole.position.set(wsX, WATER_LEVEL + 3, wsZ);
   wsPole.material = wsPoleMat;
   wsPole.renderingGroupId = 1;
 
@@ -2840,7 +3288,7 @@ function createScene(engine) {
     diameterTop: 0, diameterBottom: 0.8, height: 1.5, tessellation: 8
   }, scene);
   windsock.rotation.x = Math.PI / 2;
-  windsock.position.set(wsX, 5.8, wsZ - 0.75);
+  windsock.position.set(wsX, WATER_LEVEL + 5.8, wsZ - 0.75);
   windsock.material = wsSockMat;
   windsock.renderingGroupId = 1;
 
@@ -3547,7 +3995,9 @@ const MAX_FRAME_DT = 0.1;
 
 const model = new FlightModel();
 model.getGroundHeight = getTerrainHeightBounded;
+model.isOverWater = isOverWater;
 const input = new InputHandler();
+const audioManager = new AudioManager();
 
 const canvas = document.getElementById('renderCanvas');
 const engine = new BABYLON.Engine(canvas, true, { stencil: true });
@@ -3598,6 +4048,7 @@ function restart() {
   model.position.y = getTerrainHeightBounded(0, 0);
   accumulator = 0;
   lastTime = null;
+  audioManager.reset();
   prevPosition.set(0, model.position.y, 0);
   prevOrientation = new Quat(0, 0, 0, 1);
   // Reset camera
@@ -3758,6 +4209,9 @@ initFlightHUD();
 
 // Listen for R key to restart after crash, P/Escape to toggle pause
 window.addEventListener('keydown', (e) => {
+  // Resume AudioContext on first user interaction (browser autoplay policy)
+  if (audioManager.audioCtx.state === 'suspended') audioManager.audioCtx.resume();
+
   if (e.code === 'KeyR' && model.crashed) {
     restart();
     paused = false;
@@ -3765,7 +4219,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || e.code === 'Escape') {
     if (!model.crashed) {
       paused = !paused;
-      if (!paused) lastTime = null; // reset dt so no huge jump after unpause
+      if (!paused) {
+        lastTime = null; // reset dt so no huge jump after unpause
+        audioManager.audioCtx.resume();
+      } else {
+        audioManager.audioCtx.suspend();
+      }
     }
   }
   if (e.code === 'Backquote') {
@@ -3775,6 +4234,7 @@ window.addEventListener('keydown', (e) => {
   // Toggle landing gear (only when airborne)
   if (e.code === 'KeyG' && !model.crashed && !model.onGround) {
     model.gearDown = !model.gearDown;
+    audioManager.playGearSound();
   }
   // Toggle auto-level
   if (e.code === 'KeyL' && !model.crashed) {
@@ -3792,6 +4252,7 @@ window.addEventListener('keydown', (e) => {
       model.flapIndex = (model.flapIndex + 1) % model.flapSettings.length;
     }
     model.flapAngle = model.flapSettings[model.flapIndex];
+    audioManager.playFlapSound();
   }
   // Restore points — Q to save, 1/2/3 to load
   if (e.code === 'KeyQ' && !model.crashed) {
@@ -3812,6 +4273,11 @@ window.addEventListener('keydown', (e) => {
   // Speed brake — B toggles in air
   if (e.code === 'KeyB' && !model.crashed && !model.onGround) {
     model.speedBrakeDeployed = !model.speedBrakeDeployed;
+    audioManager.playSpeedBrakeSound();
+  }
+  // Audio mute toggle
+  if (e.code === 'KeyM') {
+    audioManager.toggleMute();
   }
 });
 
@@ -3836,6 +4302,9 @@ engine.runRenderLoop(() => {
     // Wheel brake: hold B on ground
     model.wheelBrakeActive = model.onGround && input.keys['KeyB'];
   }
+
+  // 1b. Audio update
+  audioManager.update(model);
 
   // 2. Fixed timestep physics with state snapshots for interpolation
   accumulator += frameDt;
